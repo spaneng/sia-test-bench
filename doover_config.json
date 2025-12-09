@@ -1,0 +1,50 @@
+{
+    "sia_test_bench": {
+        "name": "sia_test_bench",
+        "display_name": "sia-test-bench",
+        "type": "DEV",
+        "visibility": "PUB",
+        "allow_many": true,
+        "description": "For testing and commissioning SIA pumps. The App provides the user interface for technicians to enter pump information and perform various tests.",
+        "long_description": "README.md",
+        "depends_on": [],
+        "owner_org_key": "48f2d2c4-4c82-4fc3-8de8-d924d81c4588",
+        "image_name": "spaneng/sia-test-bench:latest",
+        "container_registry_profile_key": "ee4568d0-9120-4ef9-b0f6-4ee121292a96",
+        "build_args": "--platform linux/amd64,linux/arm64",
+        "config_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "",
+            "title": "Application Config",
+            "type": "object",
+            "properties": {
+                "digital_outputs_enabled": {
+                    "title": "Digital Outputs Enabled",
+                    "x-name": "digital_outputs_enabled",
+                    "x-hidden": false,
+                    "type": "boolean",
+                    "default": true
+                },
+                "a_funny_message": {
+                    "title": "A Funny Message",
+                    "x-name": "a_funny_message",
+                    "x-hidden": false,
+                    "type": "string"
+                },
+                "simulator_app_key": {
+                    "format": "doover-application",
+                    "title": "Simulator App Key",
+                    "x-name": "simulator_app_key",
+                    "x-hidden": false,
+                    "type": "string",
+                    "description": "The app key for the simulator"
+                }
+            },
+            "additionalElements": true,
+            "required": [
+                "a_funny_message",
+                "simulator_app_key"
+            ]
+        }
+    }
+}

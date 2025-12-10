@@ -1,0 +1,25 @@
+.split-pane-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.split-pane-left {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.split-pane-divider {
+  width: 2px;
+  background: #e5e7eb;
+  flex-shrink: 0;
+}
+
+.split-pane-right {
+  flex: 2;
+  min-width: 0;
+  overflow: hidden;
+}
+

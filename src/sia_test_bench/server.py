@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import random
 import time
 from pathlib import Path
@@ -10,21 +11,16 @@ import aiohttp
 from aiohttp import web
 from aiohttp.web_runner import AppRunner, TCPSite
 
-from pydoover.docker import Application
-from pydoover import ui
-
-from .app_config import SiaTestBenchConfig
 from .app_state import SiaTestBenchState
 
 log = logging.getLogger()
 
-class SiaTestBenchApplication(Application):
-    config: SiaTestBenchConfig  # not necessary, but helps your IDE provide autocomplete!
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.started: float = time.time()
-        self.state: SiaTestBenchState = None
+class TestBenchServer:
+    """Web server for the SIA Test Bench application."""
+    
+    def __init__(self, state: SiaTestBenchState = None):
+        self.state = state or SiaTestBenchState()
         self.app: web.Application = None
         self.runner: AppRunner = None
         self.site: TCPSite = None
@@ -35,9 +31,7 @@ class SiaTestBenchApplication(Application):
         self.data_generation_task: asyncio.Task = None
 
     async def setup(self):
-        """Initialize the web server and state machine."""
-        self.state = SiaTestBenchState()
-        
+        """Initialize the web server."""
         # Create aiohttp application
         self.app = web.Application()
         
@@ -61,7 +55,6 @@ class SiaTestBenchApplication(Application):
         await self.runner.setup()
         
         # Get port from environment or use default
-        import os
         port = int(os.environ.get('PORT', '8080'))
         self.site = TCPSite(self.runner, '0.0.0.0', port)
         await self.site.start()
@@ -72,7 +65,7 @@ class SiaTestBenchApplication(Application):
         self.data_generation_task = asyncio.create_task(self.generate_system_data())
 
     async def main_loop(self):
-        """Main application loop."""
+        """Main server loop."""
         # The server runs in the background, so we just sleep here
         await asyncio.sleep(1)
     
@@ -286,5 +279,4 @@ class SiaTestBenchApplication(Application):
             return web.FileResponse(index_file)
         else:
             return web.Response(text="Frontend not found", status=404)
-
 

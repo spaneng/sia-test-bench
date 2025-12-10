@@ -1,0 +1,96 @@
+.test-bench-mockup {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-top: 2rem;
+}
+
+.test-bench-mockup h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.mockup-container {
+  width: 100%;
+  background: white;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.test-bench-svg {
+  width: 100%;
+  height: auto;
+  max-height: 400px;
+  display: block;
+}
+
+.component-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  fill: #374151;
+}
+
+.status-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.sensor-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  fill: #6b7280;
+}
+
+.sensor-value {
+  font-size: 0.75rem;
+  font-weight: 700;
+  fill: #111827;
+  font-variant-numeric: tabular-nums;
+}
+
+.power-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.power-value {
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-indicator {
+  pointer-events: none;
+}
+
+@keyframes flow-animation {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .test-bench-svg {
+    max-height: 300px;
+  }
+  
+  .component-label,
+  .sensor-label,
+  .sensor-value,
+  .power-label,
+  .power-value {
+    font-size: 0.65rem;
+  }
+}
+

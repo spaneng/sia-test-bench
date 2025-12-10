@@ -5,10 +5,8 @@ from pydoover import config
 
 class SiaTestBenchConfig(config.Schema):
     def __init__(self):
-        self.outputs_enabled = config.Boolean("Digital Outputs Enabled", default=True)
-        self.funny_message = config.String("A Funny Message")  # this will be required as no default given.
-
-        self.sim_app_key = config.Application("Simulator App Key", description="The app key for the simulator")
+        self.barcode_reader_path = config.String("Barcode Reader Path")
+        
 
 
 def export():

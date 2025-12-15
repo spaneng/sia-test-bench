@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTestBenchStore, type PumpData } from '../store/useTestBenchStore';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -33,7 +33,11 @@ export function useWebSocket() {
               const pumpData: PumpData = {
                 timestamp: data.timestamp || Date.now(),
                 pressure: data.pressure,
+                tankLevel: data.tankLevel,
                 flowRate: data.flowRate,
+                currentDraw: data.currentDraw,
+                pulseRate: data.pulseRate,
+                valveState: data.valveState,
                 temperature: data.temperature,
                 voltage: data.voltage,
                 current: data.current,

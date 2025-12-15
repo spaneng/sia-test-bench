@@ -3,6 +3,14 @@ LABEL com.doover.app="true"
 LABEL com.doover.managed="true"
 HEALTHCHECK --interval=30s --timeout=2s --start-period=5s CMD curl -f "127.0.0.1:$HEALTHCHECK_PORT" || exit 1
 
+## FRONTEND BUILD STAGE ##
+FROM node:20-slim AS frontend-builder
+WORKDIR /frontend
+COPY src/sia_test_bench/frontend/package*.json ./
+RUN npm ci
+COPY src/sia_test_bench/frontend/ .
+RUN npm run build
+
 ## FIRST STAGE ##
 FROM base_image AS builder
 
@@ -20,6 +28,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
 COPY . /app
+
+# Copy built frontend from frontend-builder stage
+COPY --from=frontend-builder /frontend/dist /app/src/sia_test_bench/frontend/dist
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 

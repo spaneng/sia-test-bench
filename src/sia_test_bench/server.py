@@ -2,8 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import random
-import time
 from pathlib import Path
 from typing import Set
 
@@ -28,14 +26,13 @@ class TestBenchServer:
         self.pump_state: str = 'warning_disabled'
         self.is_running: bool = False
         self.target_flow: float = 0.0
-        self.data_generation_task: asyncio.Task = None
 
     async def setup(self):
         """Initialize the web server."""
         # Create aiohttp application
         self.app = web.Application()
         
-        # Setup routes
+        # Setup API routes first
         self.app.router.add_get('/ws', self.websocket_handler)
         self.app.router.add_get('/api/pumps', self.get_pumps_handler)
         self.app.router.add_post('/api/pump/start', self.start_pump_handler)
@@ -44,9 +41,17 @@ class TestBenchServer:
         # Serve static files from frontend dist directory
         frontend_dist = Path(__file__).parent / 'frontend' / 'dist'
         if frontend_dist.exists():
-            self.app.router.add_static('/', frontend_dist, name='static')
-            # Catch-all route to serve index.html for SPA routing
-            self.app.router.add_get('/{path:.*}', self.index_handler)
+            # Serve static assets (JS, CSS, etc.) from /assets/ path
+            assets_dir = frontend_dist / 'assets'
+            if assets_dir.exists():
+                self.app.router.add_static('/assets', assets_dir, name='assets')
+            
+            # Serve index.html at root
+            self.app.router.add_get('/', self.index_handler)
+            
+            # Catch-all route to serve index.html for SPA routing (must be last)
+            # This will also handle any other static files that aren't in /assets/
+            self.app.router.add_get('/{path:.*}', self.static_or_index_handler)
         else:
             log.warning(f"Frontend dist directory not found at {frontend_dist}")
         
@@ -55,14 +60,11 @@ class TestBenchServer:
         await self.runner.setup()
         
         # Get port from environment or use default
-        port = int(os.environ.get('PORT', '8080'))
+        port = int(os.environ.get('PORT', '8092'))
         self.site = TCPSite(self.runner, '0.0.0.0', port)
         await self.site.start()
         
         log.info(f"Web server started on port {port}")
-        
-        # Start data generation task
-        self.data_generation_task = asyncio.create_task(self.generate_system_data())
 
     async def main_loop(self):
         """Main server loop."""
@@ -71,13 +73,6 @@ class TestBenchServer:
     
     async def cleanup(self):
         """Cleanup resources when shutting down."""
-        if self.data_generation_task:
-            self.data_generation_task.cancel()
-            try:
-                await self.data_generation_task
-            except asyncio.CancelledError:
-                pass
-        
         # Close all WebSocket connections
         for ws in list(self.websockets):
             await ws.close()
@@ -140,40 +135,16 @@ class TestBenchServer:
         else:
             log.debug(f"Unknown message type: {message_type}")
 
-    async def generate_system_data(self):
-        """Generate and broadcast system data periodically."""
-        while True:
-            try:
-                if self.is_running and self.pump_state == 'on':
-                    # Generate realistic pump data when running
-                    data = {
-                        'type': 'data',
-                        'timestamp': int(time.time() * 1000),
-                        'pressure': round(random.uniform(20, 100), 2),
-                        'flowRate': round(random.uniform(0, self.target_flow * 1.1), 2),
-                        'temperature': round(random.uniform(65, 85), 2),
-                        'voltage': round(random.uniform(110, 120), 2),
-                        'current': round(random.uniform(3, 10), 2),
-                    }
-                else:
-                    # Generate minimal/no data when not running
-                    data = {
-                        'type': 'data',
-                        'timestamp': int(time.time() * 1000),
-                        'pressure': round(random.uniform(0, 5), 2),
-                        'flowRate': 0.0,
-                        'temperature': round(random.uniform(65, 75), 2),
-                        'voltage': round(random.uniform(110, 120), 2),
-                        'current': round(random.uniform(0, 0.5), 2),
-                    }
-                
-                await self.broadcast_data(data)
-                
-            except Exception as e:
-                log.error(f"Error generating system data: {e}")
-            
-            await asyncio.sleep(0.5)  # Send data every 500ms
 
+    async def push_data(self, data: dict):
+        """Push a data packet to the frontend via WebSocket.
+        
+        Args:
+            data: Dictionary containing the data packet. Should include 'type': 'data'
+                  and fields like 'timestamp', 'pressure', 'flowRate', etc.
+        """
+        await self.broadcast_data(data)
+    
     async def broadcast_data(self, data: dict):
         """Broadcast data to all connected WebSocket clients."""
         if not self.websockets:
@@ -272,8 +243,27 @@ class TestBenchServer:
             await self.broadcast_state()
 
     async def index_handler(self, request: web.Request) -> web.FileResponse:
-        """Serve index.html for SPA routing."""
+        """Serve index.html for root path."""
         frontend_dist = Path(__file__).parent / 'frontend' / 'dist'
+        index_file = frontend_dist / 'index.html'
+        if index_file.exists():
+            return web.FileResponse(index_file)
+        else:
+            return web.Response(text="Frontend not found", status=404)
+    
+    async def static_or_index_handler(self, request: web.Request) -> web.Response:
+        """Serve static files if they exist, otherwise serve index.html for SPA routing."""
+        path = request.match_info.get('path', '')
+        
+        # Check if the path is a file in the dist directory (but not in assets, which is handled separately)
+        frontend_dist = Path(__file__).parent / 'frontend' / 'dist'
+        static_file = frontend_dist / path
+        
+        # Only serve files that exist and are actual files (not directories)
+        if static_file.exists() and static_file.is_file() and not path.startswith('assets/'):
+            return web.FileResponse(static_file)
+        
+        # Otherwise, serve index.html for SPA routing
         index_file = frontend_dist / 'index.html'
         if index_file.exists():
             return web.FileResponse(index_file)

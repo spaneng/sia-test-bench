@@ -3,11 +3,15 @@ import { create } from 'zustand';
 export interface PumpData {
   timestamp: number;
   pressure?: number;
+  tankLevel?: number;
   flowRate?: number;
+  currentDraw?: number;
+  pulseRate?: number;
+  valveState?: number | boolean | string;
   temperature?: number;
   voltage?: number;
   current?: number;
-  [key: string]: number | undefined;
+  [key: string]: number | boolean | string | undefined;
 }
 
 export interface PumpType {
@@ -63,7 +67,7 @@ export interface TestBenchState {
   setWarningEnabled: () => Promise<void>;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.host}`;
 
 export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   // Initial state

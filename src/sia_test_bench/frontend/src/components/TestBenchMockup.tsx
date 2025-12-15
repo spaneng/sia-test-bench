@@ -4,18 +4,16 @@ import './TestBenchMockup.css';
 export function TestBenchMockup() {
   const { latestData, pumpState, isRunning } = useTestBenchStore();
 
-  const formatValue = (value: number | null | undefined, unit: string) => {
+  const formatValue = (value: number | boolean | string | null | undefined, unit: string = '') => {
     if (value === null || value === undefined) return `-- ${unit}`;
+    if (typeof value === 'boolean') return value ? 'ON' : 'OFF';
+    if (typeof value === 'string') return value;
     return `${value.toFixed(1)} ${unit}`;
   };
 
   const getPumpColor = () => {
     if (!isRunning) return '#9ca3af'; // gray when off
     return pumpState === 'on' ? '#10b981' : '#f59e0b'; // green when on, amber for warning_disabled
-  };
-
-  const getFlowAnimation = () => {
-    return isRunning ? 'flow-animation 2s linear infinite' : 'none';
   };
 
   return (
@@ -149,7 +147,7 @@ export function TestBenchMockup() {
 
           {/* Power/Electrical Section */}
           <g id="power-section">
-            <rect x="50" y="50" width="100" height="80" fill="#1f2937" rx="5" />
+            <rect x="50" y="50" width="100" height="100" fill="#1f2937" rx="5" />
             <rect x="60" y="60" width="80" height="20" fill="#374151" rx="3" />
             <text x="100" y="75" textAnchor="middle" className="power-label" fill="#ffffff">
               POWER
@@ -162,15 +160,55 @@ export function TestBenchMockup() {
             <text x="70" y="120" className="power-value" fill="#ef4444">
               I: {formatValue(latestData?.current, 'A')}
             </text>
+            {/* Current Draw */}
+            <text x="70" y="140" className="power-value" fill="#f59e0b">
+              Draw: {formatValue(latestData?.currentDraw, 'A')}
+            </text>
+          </g>
+
+          {/* Tank Level Sensor */}
+          <g id="tank-level-sensor">
+            <rect x="200" y="50" width="60" height="100" fill="#6366f1" rx="5" />
+            <rect x="210" y="60" width="40" height="80" fill="#1e293b" rx="3" />
+            {/* Tank level indicator */}
+            <rect 
+              x="210" 
+              y={60 + (80 - (latestData?.tankLevel ? (latestData.tankLevel / 100) * 80 : 0))} 
+              width="40" 
+              height={latestData?.tankLevel ? (latestData.tankLevel / 100) * 80 : 0} 
+              fill="#3b82f6" 
+              rx="3"
+            />
+            <text x="230" y="30" textAnchor="middle" className="sensor-label">
+              TANK LEVEL
+            </text>
+            <text x="230" y="165" textAnchor="middle" className="sensor-value">
+              {formatValue(latestData?.tankLevel, '%')}
+            </text>
+          </g>
+
+          {/* Pulse Rate Sensor */}
+          <g id="pulse-sensor">
+            <circle cx="700" cy="100" r="20" fill="#ec4899" />
+            <circle cx="700" cy="100" r="10" fill="#ffffff" />
+            <text x="700" y="140" textAnchor="middle" className="sensor-label">
+              PULSE
+            </text>
+            <text x="700" y="160" textAnchor="middle" className="sensor-value">
+              {formatValue(latestData?.pulseRate, 'Hz')}
+            </text>
           </g>
 
           {/* Control Valve */}
           <g id="control-valve">
-            <rect x="580" y="170" width="40" height="60" fill="#6b7280" rx="5" />
+            <rect x="580" y="170" width="40" height="60" fill={latestData?.valveState ? '#10b981' : '#6b7280'} rx="5" />
             <circle cx="600" cy="200" r="12" fill="#ffffff" />
             <line x1="600" y1="188" x2="600" y2="212" stroke="#374151" strokeWidth="3" />
             <text x="600" y="250" textAnchor="middle" className="component-label">
               VALVE
+            </text>
+            <text x="600" y="270" textAnchor="middle" className="sensor-value">
+              {formatValue(latestData?.valveState)}
             </text>
           </g>
 

@@ -21,15 +21,21 @@ export function VisualizationPlane() {
       time: new Date(point.timestamp).toLocaleTimeString(),
       timestamp: point.timestamp,
       pressure: point.pressure ?? null,
+      tankLevel: point.tankLevel ?? null,
       flowRate: point.flowRate ?? null,
+      currentDraw: point.currentDraw ?? null,
+      pulseRate: point.pulseRate ?? null,
+      valveState: point.valveState ?? null,
       temperature: point.temperature ?? null,
       voltage: point.voltage ?? null,
       current: point.current ?? null,
     }));
   }, [dataHistory]);
 
-  const formatValue = (value: number | null | undefined) => {
+  const formatValue = (value: number | boolean | string | null | undefined) => {
     if (value === null || value === undefined) return 'N/A';
+    if (typeof value === 'boolean') return value ? 'ON' : 'OFF';
+    if (typeof value === 'string') return value;
     return value.toFixed(2);
   };
 
@@ -59,9 +65,33 @@ export function VisualizationPlane() {
               </span>
             </div>
             <div className="value-card">
+              <span className="value-label">Tank Level</span>
+              <span className="value-number">
+                {formatValue(latestData.tankLevel)} <span className="value-unit">%</span>
+              </span>
+            </div>
+            <div className="value-card">
               <span className="value-label">Flow Rate</span>
               <span className="value-number">
                 {formatValue(latestData.flowRate)} <span className="value-unit">GPM</span>
+              </span>
+            </div>
+            <div className="value-card">
+              <span className="value-label">Current Draw</span>
+              <span className="value-number">
+                {formatValue(latestData.currentDraw)} <span className="value-unit">A</span>
+              </span>
+            </div>
+            <div className="value-card">
+              <span className="value-label">Pulse Rate</span>
+              <span className="value-number">
+                {formatValue(latestData.pulseRate)} <span className="value-unit">Hz</span>
+              </span>
+            </div>
+            <div className="value-card">
+              <span className="value-label">Valve State</span>
+              <span className="value-number">
+                {formatValue(latestData.valveState)}
               </span>
             </div>
             <div className="value-card">
@@ -117,6 +147,64 @@ export function VisualizationPlane() {
                     strokeWidth={2}
                     dot={false}
                     name="Flow Rate (GPM)"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="chart-wrapper">
+              <h3>Tank Level & Current Draw</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="time" 
+                    tick={{ fontSize: 12 }}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="tankLevel"
+                    stroke="#8b5cf6"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Tank Level (%)"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="currentDraw"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Current Draw (A)"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="chart-wrapper">
+              <h3>Pulse Rate</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="time" 
+                    tick={{ fontSize: 12 }}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="pulseRate"
+                    stroke="#f59e0b"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Pulse Rate (Hz)"
                   />
                 </LineChart>
               </ResponsiveContainer>

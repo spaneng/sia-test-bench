@@ -5,7 +5,8 @@ from pydoover import config
 
 class SiaTestBenchConfig(config.Schema):
     def __init__(self):
-        self.barcode_reader_path = config.String("Barcode Reader Path")
+        pass
+        # self.barcode_reader_path = config.String("Barcode Reader Path")
         
 
 

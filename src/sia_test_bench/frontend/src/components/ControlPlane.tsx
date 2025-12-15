@@ -40,10 +40,45 @@ export function ControlPlane() {
   const [pressureTestProgress, setPressureTestProgress] = useState(0);
   const [flowTestProgress, setFlowTestProgress] = useState(0);
   const [isTestRunning, setIsTestRunning] = useState(false);
+  const [showPumpInfoView, setShowPumpInfoView] = useState(false);
+  const [editablePumpData, setEditablePumpData] = useState<{
+    name: string;
+    model?: string;
+    maxRPM?: number;
+    maxFlowRate?: number;
+    maxPressure?: number;
+    currentDraw?: number;
+    strokeLength?: number;
+  } | null>(null);
+  const hasInitializedPumpInfo = useRef<string | null>(null);
 
   useEffect(() => {
     fetchAvailablePumps();
   }, [fetchAvailablePumps]);
+
+  // Show pump info view when a pump is first selected
+  useEffect(() => {
+    if (selectedPump) {
+      // Only initialize if this is a new pump (different ID) or if we haven't initialized yet
+      if (hasInitializedPumpInfo.current !== selectedPump.id) {
+        hasInitializedPumpInfo.current = selectedPump.id;
+        setShowPumpInfoView(true);
+        setEditablePumpData({
+          name: selectedPump.name || '',
+          model: selectedPump.model,
+          maxRPM: selectedPump.maxRPM,
+          maxFlowRate: selectedPump.maxFlowRate,
+          maxPressure: selectedPump.maxPressure,
+          currentDraw: selectedPump.currentDraw,
+          strokeLength: selectedPump.strokeLength,
+        });
+      }
+    } else {
+      setShowPumpInfoView(false);
+      setEditablePumpData(null);
+      hasInitializedPumpInfo.current = null;
+    }
+  }, [selectedPump]);
 
   // Handle closing popover with exit animation
   const handleClosePopover = () => {
@@ -141,6 +176,7 @@ export function ControlPlane() {
   const handlePumpSelect = (pumpId: string) => {
     if (!pumpId) {
       setSelectedPump(null);
+      setShowPumpInfoView(false);
       return;
     }
     const pump = availablePumps.find((p) => p.id === pumpId);
@@ -149,6 +185,7 @@ export function ControlPlane() {
       setPumpSelectionExiting(true);
       setTimeout(() => {
         setSelectedPump(pump);
+        setShowPumpInfoView(true);
         setPumpSelectionExiting(false);
       }, 400); // Match exit animation duration
     }
@@ -245,7 +282,30 @@ export function ControlPlane() {
       setTestViewExiting(false);
       setTestHeaderExiting(false);
       setPumpSelectionExiting(false);
+      setShowPumpInfoView(false);
     }, 400); // Match exit animation duration
+  };
+
+  const handleContinueFromPumpInfo = () => {
+    // Update the selected pump with edited values before continuing
+    if (selectedPump && editablePumpData) {
+      const updatedPump = {
+        ...selectedPump,
+        ...editablePumpData,
+      };
+      setSelectedPump(updatedPump);
+    }
+    // Set showPumpInfoView to false - the ref will prevent useEffect from resetting it
+    setShowPumpInfoView(false);
+  };
+
+  const handlePumpDataChange = (field: string, value: string | number) => {
+    if (!editablePumpData) return;
+    
+    setEditablePumpData({
+      ...editablePumpData,
+      [field]: value === '' ? undefined : (typeof value === 'string' && field !== 'name' && field !== 'model' ? parseFloat(value) || undefined : value),
+    });
   };
 
   // Page 1: Pump Selection
@@ -307,7 +367,140 @@ export function ControlPlane() {
     );
   }
 
-  // Page 2: Test and Control Interface
+  // Page 2a: Pump Info View
+  if (selectedPump && showPumpInfoView && editablePumpData) {
+    return (
+      <div className={`control-plane pump-info-view ${isExiting ? 'exiting' : ''}`}>
+        <div className="control-header">
+          <h2>Pump Information</h2>
+          <button
+            className="btn-change-pump"
+            onClick={handleChangePump}
+          >
+            Change Pump
+          </button>
+        </div>
+
+        <div className="pump-info-display">
+          <div className="pump-info-form-group">
+            <label htmlFor="pump-name" className="pump-info-form-label">Pump Name:</label>
+            <input
+              id="pump-name"
+              type="text"
+              className="pump-info-form-input"
+              value={editablePumpData.name}
+              onChange={(e) => handlePumpDataChange('name', e.target.value)}
+              placeholder="Enter pump name"
+            />
+          </div>
+          
+          <div className="pump-info-form-group">
+            <label htmlFor="pump-model" className="pump-info-form-label">Model:</label>
+            <input
+              id="pump-model"
+              type="text"
+              className="pump-info-form-input"
+              value={editablePumpData.model || ''}
+              onChange={(e) => handlePumpDataChange('model', e.target.value)}
+              placeholder="Enter model"
+            />
+          </div>
+          
+          <div className="pump-info-details">
+            <div className="pump-info-detail-item">
+              <label htmlFor="pump-max-rpm" className="pump-info-detail-label">Max RPM:</label>
+              <div className="pump-info-input-wrapper">
+                <input
+                  id="pump-max-rpm"
+                  type="number"
+                  className="pump-info-detail-input"
+                  value={editablePumpData.maxRPM || ''}
+                  onChange={(e) => handlePumpDataChange('maxRPM', e.target.value)}
+                  placeholder="Enter max RPM"
+                />
+                <span className="pump-info-unit">RPM</span>
+              </div>
+            </div>
+            
+            <div className="pump-info-detail-item">
+              <label htmlFor="pump-max-flow" className="pump-info-detail-label">Max Flow Rate:</label>
+              <div className="pump-info-input-wrapper">
+                <input
+                  id="pump-max-flow"
+                  type="number"
+                  step="0.1"
+                  className="pump-info-detail-input"
+                  value={editablePumpData.maxFlowRate || ''}
+                  onChange={(e) => handlePumpDataChange('maxFlowRate', e.target.value)}
+                  placeholder="Enter max flow rate"
+                />
+                <span className="pump-info-unit">GPM</span>
+              </div>
+            </div>
+            
+            <div className="pump-info-detail-item">
+              <label htmlFor="pump-max-pressure" className="pump-info-detail-label">Max Pressure:</label>
+              <div className="pump-info-input-wrapper">
+                <input
+                  id="pump-max-pressure"
+                  type="number"
+                  step="0.1"
+                  className="pump-info-detail-input"
+                  value={editablePumpData.maxPressure || ''}
+                  onChange={(e) => handlePumpDataChange('maxPressure', e.target.value)}
+                  placeholder="Enter max pressure"
+                />
+                <span className="pump-info-unit">PSI</span>
+              </div>
+            </div>
+            
+            <div className="pump-info-detail-item">
+              <label htmlFor="pump-current-draw" className="pump-info-detail-label">Current Draw:</label>
+              <div className="pump-info-input-wrapper">
+                <input
+                  id="pump-current-draw"
+                  type="number"
+                  step="0.1"
+                  className="pump-info-detail-input"
+                  value={editablePumpData.currentDraw || ''}
+                  onChange={(e) => handlePumpDataChange('currentDraw', e.target.value)}
+                  placeholder="Enter current draw"
+                />
+                <span className="pump-info-unit">A</span>
+              </div>
+            </div>
+            
+            <div className="pump-info-detail-item">
+              <label htmlFor="pump-stroke-length" className="pump-info-detail-label">Stroke Length:</label>
+              <div className="pump-info-input-wrapper">
+                <input
+                  id="pump-stroke-length"
+                  type="number"
+                  step="0.1"
+                  className="pump-info-detail-input"
+                  value={editablePumpData.strokeLength || ''}
+                  onChange={(e) => handlePumpDataChange('strokeLength', e.target.value)}
+                  placeholder="Enter stroke length"
+                />
+                <span className="pump-info-unit">in</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="pump-info-actions">
+          <button
+            className="btn btn-primary btn-continue"
+            onClick={handleContinueFromPumpInfo}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Page 2b: Test and Control Interface
   return (
     <div className={`control-plane ${isExiting ? 'exiting' : ''}`}>
       <div className="control-header">

@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { useTestBenchStore } from '../store/useTestBenchStore';
 import { TestBenchMockup } from './TestBenchMockup';
+import { MiniLiveChart } from './MiniLiveChart';
 import './VisualizationPlane.css';
 
 export function VisualizationPlane() {
@@ -28,10 +29,31 @@ export function VisualizationPlane() {
     }));
   }, [dataHistory]);
 
-  const formatValue = (value: number | null | undefined) => {
-    if (value === null || value === undefined) return 'N/A';
-    return value.toFixed(2);
-  };
+  // Extract data arrays for mini charts
+  const pressureData = useMemo(() => 
+    dataHistory.map(point => point.pressure ?? 0),
+    [dataHistory]
+  );
+  
+  const flowRateData = useMemo(() => 
+    dataHistory.map(point => point.flowRate ?? 0),
+    [dataHistory]
+  );
+  
+  const temperatureData = useMemo(() => 
+    dataHistory.map(point => point.temperature ?? 0),
+    [dataHistory]
+  );
+  
+  const voltageData = useMemo(() => 
+    dataHistory.map(point => point.voltage ?? 0),
+    [dataHistory]
+  );
+  
+  const currentData = useMemo(() => 
+    dataHistory.map(point => point.current ?? 0),
+    [dataHistory]
+  );
 
   return (
     <div className="visualization-plane">
@@ -48,43 +70,47 @@ export function VisualizationPlane() {
         </div>
       )}
 
-      {latestData && (
-        <div className="current-values">
-          <h3>Current Values</h3>
-          <div className="value-grid">
-            <div className="value-card">
-              <span className="value-label">Pressure</span>
-              <span className="value-number">
-                {formatValue(latestData.pressure)} <span className="value-unit">PSI</span>
-              </span>
-            </div>
-            <div className="value-card">
-              <span className="value-label">Flow Rate</span>
-              <span className="value-number">
-                {formatValue(latestData.flowRate)} <span className="value-unit">GPM</span>
-              </span>
-            </div>
-            <div className="value-card">
-              <span className="value-label">Temperature</span>
-              <span className="value-number">
-                {formatValue(latestData.temperature)} <span className="value-unit">°F</span>
-              </span>
-            </div>
-            <div className="value-card">
-              <span className="value-label">Voltage</span>
-              <span className="value-number">
-                {formatValue(latestData.voltage)} <span className="value-unit">V</span>
-              </span>
-            </div>
-            <div className="value-card">
-              <span className="value-label">Current</span>
-              <span className="value-number">
-                {formatValue(latestData.current)} <span className="value-unit">A</span>
-              </span>
-            </div>
-          </div>
+      {/* Mini Live Charts - Real-time visualizations */}
+      <div className="current-values">
+        <h3>Live Metrics</h3>
+        <div className="value-grid">
+          <MiniLiveChart
+            label="Pressure"
+            data={pressureData}
+            unit="PSI"
+            color="#3b82f6"
+            latestValue={latestData?.pressure}
+          />
+          <MiniLiveChart
+            label="Flow Rate"
+            data={flowRateData}
+            unit="GPM"
+            color="#10b981"
+            latestValue={latestData?.flowRate}
+          />
+          <MiniLiveChart
+            label="Temperature"
+            data={temperatureData}
+            unit="°F"
+            color="#f59e0b"
+            latestValue={latestData?.temperature}
+          />
+          <MiniLiveChart
+            label="Voltage"
+            data={voltageData}
+            unit="V"
+            color="#8b5cf6"
+            latestValue={latestData?.voltage}
+          />
+          <MiniLiveChart
+            label="Current"
+            data={currentData}
+            unit="A"
+            color="#ef4444"
+            latestValue={latestData?.current}
+          />
         </div>
-      )}
+      </div>
 
       <div className="charts-container">
         {chartData.length > 0 ? (

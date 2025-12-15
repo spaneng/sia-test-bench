@@ -9,7 +9,8 @@ import aiohttp
 from aiohttp import web
 from aiohttp.web_runner import AppRunner, TCPSite
 
-from .app_state import SiaTestBenchState
+# Use absolute import so this can be run as a script
+from sia_test_bench.app_state import SiaTestBenchState
 
 log = logging.getLogger()
 
@@ -270,3 +271,32 @@ class TestBenchServer:
         else:
             return web.Response(text="Frontend not found", status=404)
 
+
+async def main():
+    """Main entry point for standalone server."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    server = TestBenchServer()
+    
+    try:
+        log.info("Starting TestBench Server...")
+        await server.setup()
+        log.info("Server is running. Press Ctrl+C to stop.")
+        
+        # Keep the server running
+        while True:
+            await server.main_loop()
+            
+    except KeyboardInterrupt:
+        log.info("Keyboard interrupt received")
+    finally:
+        log.info("Cleaning up...")
+        await server.cleanup()
+        log.info("Server stopped")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

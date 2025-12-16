@@ -20,5 +20,5 @@ services:
     #   - device_agent
     #   - sample_simulator
     environment:
-      - APP_KEY=test_app_key
-      # - CONFIG_FP=/app/simulators/app_config.json
+      # - APP_KEY=test_app_key
+      - CONFIG_FP=/app/simulators/app_config.json

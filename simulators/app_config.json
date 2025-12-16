@@ -1,6 +1,3 @@
 {
-    "simulator_app_key": "sim_app_key",
-    "digital_input_count": 1,
-    "digital_output_count": 2,
-    "a_funny_message": "yeeha"
+    "pump_controller_app": "sia_injection_controller-1"
 }

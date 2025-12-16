@@ -1,3 +1,5 @@
 {
-    "pump_controller_app": "sia_injection_controller-1"
+    "pump_controller_app": "sia_injection_controller-1",
+    "pressure_app":"4_20ma_sensor-1",
+    "tank_level_app":"analog_level_sensor-1"
 }

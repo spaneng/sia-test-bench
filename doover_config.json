@@ -25,11 +25,29 @@
                     "x-hidden": false,
                     "type": "string",
                     "description": "The pump 1 application"
+                },
+                "tank_level_app": {
+                    "format": "doover-application",
+                    "title": "Tank Level App",
+                    "x-name": "tank_level_app",
+                    "x-hidden": false,
+                    "type": "string",
+                    "description": "The tank level application"
+                },
+                "pressure_app": {
+                    "format": "doover-application",
+                    "title": "Pressure App",
+                    "x-name": "pressure_app",
+                    "x-hidden": false,
+                    "type": "string",
+                    "description": "The pressure sensor application"
                 }
             },
             "additionalElements": true,
             "required": [
-                "pump_controller_app"
+                "pump_controller_app",
+                "tank_level_app",
+                "pressure_app"
             ]
         },
         "key": "962c46ee-ed6d-47f5-8aab-14ca9d03b9b7",

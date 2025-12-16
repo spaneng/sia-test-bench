@@ -41,13 +41,31 @@
                     "x-hidden": false,
                     "type": "string",
                     "description": "The pressure sensor application"
+                },
+                "flow_meter_sensor_app": {
+                    "format": "doover-application",
+                    "title": "Flow Meter Sensor App",
+                    "x-name": "flow_meter_sensor_app",
+                    "x-hidden": false,
+                    "type": "string",
+                    "description": "The flow sensor application"
+                },
+                "current_draw_app": {
+                    "format": "doover-application",
+                    "title": "Current Draw App",
+                    "x-name": "current_draw_app",
+                    "x-hidden": false,
+                    "type": "string",
+                    "description": "The current draw application"
                 }
             },
             "additionalElements": true,
             "required": [
                 "pump_controller_app",
                 "tank_level_app",
-                "pressure_app"
+                "pressure_app",
+                "flow_meter_sensor_app",
+                "current_draw_app"
             ]
         },
         "key": "962c46ee-ed6d-47f5-8aab-14ca9d03b9b7",

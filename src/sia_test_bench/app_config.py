@@ -8,6 +8,8 @@ class SiaTestBenchConfig(config.Schema):
         self.pump_controller = config.Application("Pump Controller App", description="The pump 1 application")
         self.tank_level_app = config.Application("Tank Level App", description="The tank level application")
         self.pressure_sensor_app = config.Application("Pressure App", description="The pressure sensor application")
+        self.flow_sensor_app = config.Application("Flow Meter Sensor App", description="The flow sensor application")
+        self.current_draw_app = config.Application("Current Draw App", description="The current draw application")
         # self.barcode_reader_path = config.String("Barcode Reader Path")
         
 

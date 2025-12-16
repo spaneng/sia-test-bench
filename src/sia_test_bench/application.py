@@ -31,12 +31,12 @@ class SiaTestBenchApplication(Application):
         """Main application loop - called periodically."""
         # Get tag values for system data
         try:
-            pressure = self.get_tag("pressure")
-            tank_level = self.get_tag("tank_level")
-            flow_rate = self.get_tag("flow_rate")
-            current_draw = self.get_tag("current_draw")
-            pulse_rate = self.get_tag("pulse_rate")
-            valve_state = self.get_tag("valve_state")
+            pressure = self.get_tag("value", self.config.pressure_sensor_app.value)
+            tank_level = self.get_tag("level_filled_percentage", self.config.tank_level_app.value)
+            flow_rate = self.get_tag("value", self.config.flow_sensor_app.value)
+            current_draw = self.get_tag("value", self.config.current_draw_app.value)
+            pulse_rate = 10 #self.get_tag("pulse_rate")
+            valve_state = False #self.get_tag("valve_state")
         except Exception as e:
             log.error(f"Error getting tag values: {e}")
             # Use None values if tags are not available

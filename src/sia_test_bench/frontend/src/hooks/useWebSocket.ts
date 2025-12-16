@@ -6,7 +6,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
-  const { setConnectionStatus, addDataPoint, setPumpState } = useTestBenchStore();
+  const { setConnectionStatus, addDataPoint, setPumpState, setSendMessage } = useTestBenchStore();
 
   useEffect(() => {
     let reconnectAttempts = 0;
@@ -22,6 +22,15 @@ export function useWebSocket() {
           console.log('WebSocket connected');
           setConnectionStatus('connected');
           reconnectAttempts = 0;
+          
+          // Register sendMessage function in store
+          setSendMessage((message: object) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify(message));
+            } else {
+              console.warn('WebSocket is not connected');
+            }
+          });
         };
 
         ws.onmessage = (event) => {
@@ -85,16 +94,7 @@ export function useWebSocket() {
         wsRef.current.close();
       }
     };
-  }, [setConnectionStatus, addDataPoint, setPumpState]);
+  }, [setConnectionStatus, addDataPoint, setPumpState, setSendMessage]);
 
-  const sendMessage = (message: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('WebSocket is not connected');
-    }
-  };
-
-  return { sendMessage };
 }
 

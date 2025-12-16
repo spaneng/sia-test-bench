@@ -173,7 +173,7 @@ class TestBenchServer:
             except Exception as e:
                 log.error(f"Error generating system data: {e}")
             
-            await asyncio.sleep(0.5)  # Send data every 500ms
+            await asyncio.sleep(1.0)  # Send data every 1 second
 
     async def broadcast_data(self, data: dict):
         """Broadcast data to all connected WebSocket clients."""

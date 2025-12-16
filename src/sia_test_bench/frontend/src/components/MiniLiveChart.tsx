@@ -1,25 +1,6 @@
 import { useEffect, useRef } from 'react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-} from 'chart.js';
-import type { ChartOptions } from 'chart.js';
-import { Line } from 'react-chartjs-2';
-
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip
-);
+import uPlot from 'uplot';
+import 'uplot/dist/uPlot.min.css';
 
 interface MiniLiveChartProps {
   label: string;
@@ -30,64 +11,61 @@ interface MiniLiveChartProps {
 }
 
 export function MiniLiveChart({ label, data, unit, color, latestValue }: MiniLiveChartProps) {
-  const chartRef = useRef<ChartJS<'line'>>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const plotRef = useRef<uPlot | null>(null);
 
-  // Keep only the last 30 points for the mini chart
-  const recentData = data.slice(-30);
-  
-  // Create labels (just indices for mini chart)
-  const labels = recentData.map((_, index) => index.toString());
-
-  const chartData = {
-    labels,
-    datasets: [
-      {
-        data: recentData,
-        borderColor: color,
-        backgroundColor: `${color}33`, // Add transparency (20%)
-        borderWidth: 2,
-        fill: true,
-        tension: 0.4, // Smooth curves
-        pointRadius: 0, // Hide points for cleaner look
-        pointHoverRadius: 0,
-      },
-    ],
-  };
-
-  const options: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        enabled: false, // Disable tooltips for cleaner mini chart
-      },
-    },
-    scales: {
-      x: {
-        display: false, // Hide x-axis
-      },
-      y: {
-        display: false, // Hide y-axis
-        beginAtZero: false,
-      },
-    },
-    animation: {
-      duration: 300, // Quick animations for live feel
-    },
-    interaction: {
-      intersect: false,
-      mode: 'index',
-    },
-  };
-
-  // Update chart when data changes
+  // Create plot once
   useEffect(() => {
-    if (chartRef.current) {
-      chartRef.current.update('none'); // Update without animation for smooth real-time updates
-    }
+    if (!chartRef.current) return;
+
+    const opts: uPlot.Options = {
+      width: chartRef.current.clientWidth,
+      height: 80,
+      legend: {
+        show: false,
+      },
+      axes: [
+        { show: false },
+        { show: false },
+      ],
+      series: [
+        {},
+        {
+          stroke: color,
+        },
+      ],
+      padding: [8, 8, 8, 8],
+    };
+
+    const recentData = data.slice(-30);
+
+    const plotData: uPlot.AlignedData = [
+      new Array(recentData.length).fill(0).map((_, i) => i),
+      new Float64Array(recentData),
+    ];
+
+    plotRef.current = new uPlot(opts, plotData, chartRef.current);
+
+    return () => {
+      if (plotRef.current) {
+        plotRef.current.destroy();
+        plotRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update data when it changes
+  useEffect(() => {
+    if (!plotRef.current) return;
+
+    const recentData = data.slice(-30);
+
+    const plotData: uPlot.AlignedData = [
+      new Array(recentData.length).fill(0).map((_, i) => i),
+      new Float64Array(recentData),
+    ];
+
+    plotRef.current.setData(plotData);
   }, [data]);
 
   const formatValue = (value: number | null | undefined) => {
@@ -103,10 +81,7 @@ export function MiniLiveChart({ label, data, unit, color, latestValue }: MiniLiv
           {formatValue(latestValue)} <span className="mini-chart-unit">{unit}</span>
         </span>
       </div>
-      <div className="mini-chart-canvas-wrapper">
-        <Line ref={chartRef} data={chartData} options={options} />
-      </div>
+      <div className="mini-chart-canvas-wrapper" ref={chartRef} />
     </div>
   );
 }
-

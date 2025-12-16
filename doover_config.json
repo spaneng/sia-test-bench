@@ -18,33 +18,23 @@
             "title": "Application Config",
             "type": "object",
             "properties": {
-                "digital_outputs_enabled": {
-                    "title": "Digital Outputs Enabled",
-                    "x-name": "digital_outputs_enabled",
-                    "x-hidden": false,
-                    "type": "boolean",
-                    "default": true
-                },
-                "a_funny_message": {
-                    "title": "A Funny Message",
-                    "x-name": "a_funny_message",
-                    "x-hidden": false,
-                    "type": "string"
-                },
-                "simulator_app_key": {
+                "pump_controller_app": {
                     "format": "doover-application",
-                    "title": "Simulator App Key",
-                    "x-name": "simulator_app_key",
+                    "title": "Pump Controller App",
+                    "x-name": "pump_controller_app",
                     "x-hidden": false,
                     "type": "string",
-                    "description": "The app key for the simulator"
+                    "description": "The pump 1 application"
                 }
             },
             "additionalElements": true,
             "required": [
-                "a_funny_message",
-                "simulator_app_key"
+                "pump_controller_app"
             ]
-        }
+        },
+        "key": "962c46ee-ed6d-47f5-8aab-14ca9d03b9b7",
+        "code_repo_key": null,
+        "repo_branch": "main",
+        "staging_config": {}
     }
 }

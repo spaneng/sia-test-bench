@@ -14,8 +14,7 @@ services:
 
   sample_application:
     build: ../
-    ports:
-      - "8092:8092"
+    network_mode: host
     restart: unless-stopped
     # depends_on:
     #   - device_agent

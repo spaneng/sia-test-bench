@@ -5,7 +5,7 @@ from pydoover import config
 
 class SiaTestBenchConfig(config.Schema):
     def __init__(self):
-        pass
+        self.pump_controller = config.Application("Pump Controller App", description="The pump 1 application")
         # self.barcode_reader_path = config.String("Barcode Reader Path")
         
 

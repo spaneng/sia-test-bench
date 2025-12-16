@@ -59,6 +59,8 @@ export interface TestBenchState {
   setCurrentTestView: (view: TestView) => void;
   setTargetFlow: (flow: number) => void;
   fetchAvailablePumps: () => Promise<void>;
+  sendMessage: (message: object) => void;
+  setSendMessage: (fn: (message: object) => void) => void;
   
   // Control actions (these will trigger API calls)
   startPump: () => Promise<void>;
@@ -109,6 +111,12 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   },
   
   clearData: () => set({ dataHistory: [], latestData: null }),
+  
+  sendMessage: () => {
+    console.warn('WebSocket not initialized yet');
+  },
+  
+  setSendMessage: (fn) => set({ sendMessage: fn }),
   
   // Fetch available pumps from backend
   fetchAvailablePumps: async () => {

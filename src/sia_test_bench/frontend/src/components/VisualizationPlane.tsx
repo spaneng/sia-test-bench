@@ -62,7 +62,7 @@ export function VisualizationPlane() {
   return (
     <div className="visualization-plane">
       <div className="viz-header">
-        <h2>Data Visualization</h2>
+        <h2>Live Data Visualization</h2>
         <div className="data-status">
           <span>Data Points: {dataHistory.length}</span>
         </div>
@@ -119,7 +119,7 @@ export function VisualizationPlane() {
       <div className="charts-container">
         {chartData.length > 0 ? (
           <>
-            <div className="chart-wrapper">
+            {/* <div className="chart-wrapper">
               <h3>Pressure & Flow Rate</h3>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
@@ -266,7 +266,7 @@ export function VisualizationPlane() {
                   />
                 </LineChart>
               </ResponsiveContainer>
-            </div>
+            </div> */}
           </>
         ) : (
           <div className="no-data">

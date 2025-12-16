@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { useTestBenchStore } from '../store/useTestBenchStore';
-import { useWebSocket } from '../hooks/useWebSocket';
 import './ControlPlane.css';
 
 export function ControlPlane() {
@@ -19,9 +18,8 @@ export function ControlPlane() {
     setCurrentTestView,
     setTargetFlow,
     fetchAvailablePumps,
+    sendMessage,
   } = useTestBenchStore();
-  
-  const { sendMessage } = useWebSocket();
 
   const [isExiting, setIsExiting] = useState(false);
   const [testViewExiting, setTestViewExiting] = useState(false);
@@ -111,35 +109,6 @@ export function ControlPlane() {
     };
   }, [showPumpInfoPopover, popoverExiting]);
 
-  // Listen for test progress updates from WebSocket
-  useEffect(() => {
-    const ws = new WebSocket(import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws');
-    
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'test_progress') {
-          if (data.test_type === 'pressure') {
-            setPressureTestProgress(data.progress || 0);
-            if (data.progress >= 100) {
-              setIsTestRunning(false);
-            }
-          } else if (data.test_type === 'flow') {
-            setFlowTestProgress(data.progress || 0);
-            if (data.progress >= 100) {
-              setIsTestRunning(false);
-            }
-          }
-        }
-      } catch (error) {
-        // Ignore parsing errors
-      }
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, []);
 
   // Check if a test is in progress (after accept button is clicked)
   const isTestInProgress = (currentTestView === 'max_pressure' && maxPressureConfirmed) ||

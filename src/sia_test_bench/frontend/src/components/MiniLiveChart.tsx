@@ -1,25 +1,6 @@
 import { useEffect, useRef } from 'react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-} from 'chart.js';
-import type { ChartOptions } from 'chart.js';
-import { Line } from 'react-chartjs-2';
-
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip
-);
+import uPlot from 'uplot';
+import 'uplot/dist/uPlot.min.css';
 
 interface MiniLiveChartProps {
   label: string;
@@ -30,64 +11,160 @@ interface MiniLiveChartProps {
 }
 
 export function MiniLiveChart({ label, data, unit, color, latestValue }: MiniLiveChartProps) {
-  const chartRef = useRef<ChartJS<'line'>>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const plotRef = useRef<uPlot | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const currentPosRef = useRef<number>(0);
+  const targetPosRef = useRef<number>(0);
+  const animationProgressRef = useRef<number>(1);
+  const previousValueRef = useRef<number | null>(null);
+  const targetValueRef = useRef<number | null>(null);
+  const dataRef = useRef<number[]>(data);
 
-  // Keep only the last 30 points for the mini chart
-  const recentData = data.slice(-30);
-  
-  // Create labels (just indices for mini chart)
-  const labels = recentData.map((_, index) => index.toString());
-
-  const chartData = {
-    labels,
-    datasets: [
-      {
-        data: recentData,
-        borderColor: color,
-        backgroundColor: `${color}33`, // Add transparency (20%)
-        borderWidth: 2,
-        fill: true,
-        tension: 0.4, // Smooth curves
-        pointRadius: 0, // Hide points for cleaner look
-        pointHoverRadius: 0,
-      },
-    ],
-  };
-
-  const options: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        enabled: false, // Disable tooltips for cleaner mini chart
-      },
-    },
-    scales: {
-      x: {
-        display: false, // Hide x-axis
-      },
-      y: {
-        display: false, // Hide y-axis
-        beginAtZero: false,
-      },
-    },
-    animation: {
-      duration: 300, // Quick animations for live feel
-    },
-    interaction: {
-      intersect: false,
-      mode: 'index',
-    },
-  };
-
-  // Update chart when data changes
+  // Create plot once
   useEffect(() => {
-    if (chartRef.current) {
-      chartRef.current.update('none'); // Update without animation for smooth real-time updates
+    if (!chartRef.current) return;
+
+    const opts: uPlot.Options = {
+      width: chartRef.current.clientWidth,
+      height: 80,
+      legend: {
+        show: false,
+      },
+      scales: {
+        x: {
+          time: false,
+          auto: false,
+        },
+      },
+      axes: [
+        { show: false },
+        { show: false },
+      ],
+      series: [
+        {},
+        {
+          stroke: color,
+        },
+      ],
+      padding: [8, 8, 8, 8],
+    };
+
+    const recentData = data.slice(-300);
+    const startIndex = Math.max(0, data.length - 300);
+
+    const plotData: uPlot.AlignedData = [
+      new Array(recentData.length).fill(0).map((_, i) => startIndex + i),
+      new Float64Array(recentData),
+    ];
+
+    plotRef.current = new uPlot(opts, plotData, chartRef.current);
+
+    // Initialize positions and data ref
+    currentPosRef.current = data.length;
+    targetPosRef.current = data.length;
+    dataRef.current = data;
+    
+    // Set initial scale
+    plotRef.current.setScale('x', {
+      min: Math.max(0, data.length - 300),
+      max: data.length,
+    });
+
+    // Animation loop
+    const animate = () => {
+      if (!plotRef.current) return;
+
+      const diff = targetPosRef.current - currentPosRef.current;
+      
+      if (Math.abs(diff) > 0.01) {
+        // Animate over 0.9 seconds
+        currentPosRef.current += diff * 0.167;
+        
+        plotRef.current.setScale('x', {
+          min: Math.max(0, currentPosRef.current - 300),
+          max: currentPosRef.current,
+        });
+      }
+      
+      // Animate the newest point's value
+      if (animationProgressRef.current < 1) {
+        animationProgressRef.current = Math.min(1, animationProgressRef.current + 0.167);
+        
+        // Update data with interpolation during animation
+        if (previousValueRef.current !== null && targetValueRef.current !== null) {
+          const currentData = dataRef.current;
+          const recentData = currentData.slice(-300);
+          const startIndex = Math.max(0, currentData.length - 300);
+          
+          const displayData = [...recentData];
+          if (displayData.length > 0) {
+            const interpolatedValue = previousValueRef.current + 
+              (targetValueRef.current - previousValueRef.current) * animationProgressRef.current;
+            displayData[displayData.length - 1] = interpolatedValue;
+          }
+          
+          const plotData: uPlot.AlignedData = [
+            new Array(displayData.length).fill(0).map((_, i) => startIndex + i),
+            new Float64Array(displayData),
+          ];
+          
+          plotRef.current.setData(plotData);
+          
+          // When animation completes, finalize with actual data
+          if (animationProgressRef.current >= 1) {
+            previousValueRef.current = null;
+            targetValueRef.current = null;
+          }
+        }
+      }
+
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      if (plotRef.current) {
+        plotRef.current.destroy();
+        plotRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update data when it changes
+  useEffect(() => {
+    if (!plotRef.current) return;
+
+    // Detect new data point and setup interpolation
+    const isNewPoint = dataRef.current.length < data.length;
+    
+    if (isNewPoint && data.length >= 2) {
+      // New data point - setup animation
+      previousValueRef.current = data[data.length - 2];
+      targetValueRef.current = data[data.length - 1];
+      animationProgressRef.current = 0;
+    } else {
+      // Not a new point, or animation complete - update display immediately
+      const recentData = data.slice(-300);
+      const startIndex = Math.max(0, data.length - 300);
+      
+      const plotData: uPlot.AlignedData = [
+        new Array(recentData.length).fill(0).map((_, i) => startIndex + i),
+        new Float64Array(recentData),
+      ];
+      
+      plotRef.current.setData(plotData);
     }
+    
+    // Update data ref
+    dataRef.current = data;
+    
+    // Update target position for animation
+    targetPosRef.current = data.length;
   }, [data]);
 
   const formatValue = (value: number | null | undefined) => {
@@ -103,10 +180,7 @@ export function MiniLiveChart({ label, data, unit, color, latestValue }: MiniLiv
           {formatValue(latestValue)} <span className="mini-chart-unit">{unit}</span>
         </span>
       </div>
-      <div className="mini-chart-canvas-wrapper">
-        <Line ref={chartRef} data={chartData} options={options} />
-      </div>
+      <div className="mini-chart-canvas-wrapper" ref={chartRef} />
     </div>
   );
 }
-

@@ -3,15 +3,25 @@ import { useTestBenchStore, type PumpData } from '../store/useTestBenchStore';
 
 const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
 
+// Module-level flag to prevent multiple connections
+let globalConnectionActive = false;
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
-  const { setConnectionStatus, addDataPoint, setPumpState } = useTestBenchStore();
 
   useEffect(() => {
+    // Prevent duplicate connections in React.StrictMode
+    if (globalConnectionActive) {
+      return;
+    }
+    globalConnectionActive = true;
+
+    const { setConnectionStatus, addDataPoint, setPumpState, setSendMessage } = useTestBenchStore.getState();
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
     const reconnectDelay = 3000;
+    let shouldReconnect = true;
 
     const connect = () => {
       try {
@@ -22,6 +32,15 @@ export function useWebSocket() {
           console.log('WebSocket connected');
           setConnectionStatus('connected');
           reconnectAttempts = 0;
+          
+          // Register sendMessage function in store
+          setSendMessage((message: object) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify(message));
+            } else {
+              console.warn('WebSocket is not connected');
+            }
+          });
         };
 
         ws.onmessage = (event) => {
@@ -61,12 +80,14 @@ export function useWebSocket() {
           console.log('WebSocket disconnected');
           setConnectionStatus('disconnected');
           
-          // Attempt to reconnect
-          if (reconnectAttempts < maxReconnectAttempts) {
+          // Attempt to reconnect only if not cleaning up
+          if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
             reconnectTimeoutRef.current = window.setTimeout(() => {
               connect();
             }, reconnectDelay);
+          } else if (!shouldReconnect) {
+            // Cleanup initiated
           } else {
             setConnectionStatus('error');
           }
@@ -82,23 +103,19 @@ export function useWebSocket() {
     connect();
 
     return () => {
+      // Cleanup: prevent reconnections and close connection
+      shouldReconnect = false;
+      globalConnectionActive = false;
+      
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
-  }, [setConnectionStatus, addDataPoint, setPumpState]);
+  }, []);
 
-  const sendMessage = (message: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('WebSocket is not connected');
-    }
-  };
-
-  return { sendMessage };
 }
 

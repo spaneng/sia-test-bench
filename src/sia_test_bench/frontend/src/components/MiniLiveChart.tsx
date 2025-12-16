@@ -87,7 +87,7 @@ export function MiniLiveChart({ label, data, unit, color, latestValue }: MiniLiv
         });
       }
       
-      // Animate the newest point's value
+      // Animate the newest point's x and y values
       if (animationProgressRef.current < 1) {
         animationProgressRef.current = Math.min(1, animationProgressRef.current + 0.167);
         
@@ -98,14 +98,26 @@ export function MiniLiveChart({ label, data, unit, color, latestValue }: MiniLiv
           const startIndex = Math.max(0, currentData.length - 300);
           
           const displayData = [...recentData];
-          if (displayData.length > 0) {
-            const interpolatedValue = previousValueRef.current + 
-              (targetValueRef.current - previousValueRef.current) * animationProgressRef.current;
-            displayData[displayData.length - 1] = interpolatedValue;
+          const displayXData: number[] = [];
+          
+          for (let i = 0; i < displayData.length; i++) {
+            if (i === displayData.length - 1) {
+              // Interpolate both x and y for the newest point
+              const previousX = startIndex + i - 1;
+              const targetX = startIndex + i;
+              const interpolatedX = previousX + (targetX - previousX) * animationProgressRef.current;
+              displayXData.push(interpolatedX);
+              
+              const interpolatedY = previousValueRef.current + 
+                (targetValueRef.current - previousValueRef.current) * animationProgressRef.current;
+              displayData[i] = interpolatedY;
+            } else {
+              displayXData.push(startIndex + i);
+            }
           }
           
           const plotData: uPlot.AlignedData = [
-            new Array(displayData.length).fill(0).map((_, i) => startIndex + i),
+            new Float64Array(displayXData),
             new Float64Array(displayData),
           ];
           
@@ -163,7 +175,7 @@ export function MiniLiveChart({ label, data, unit, color, latestValue }: MiniLiv
     // Update data ref
     dataRef.current = data;
     
-    // Update target position for animation
+    // Update target position for x-axis pan animation
     targetPosRef.current = data.length;
   }, [data]);
 

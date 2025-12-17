@@ -18,8 +18,9 @@ log = logging.getLogger()
 class TestBenchServer:
     """Web server for the SIA Test Bench application."""
     
-    def __init__(self, state: SiaTestBenchState = None):
+    def __init__(self, state: SiaTestBenchState = None, app = None):
         self.state = state or SiaTestBenchState()
+        self.application = app  # Reference to SiaTestBenchApplication
         self.app: web.Application = None
         self.runner: AppRunner = None
         self.site: TCPSite = None
@@ -130,6 +131,26 @@ class TestBenchServer:
             elif command == 'set_target_flow':
                 self.target_flow = float(data.get('value', 0))
                 log.info(f"Target flow set to {self.target_flow} GPM")
+        elif message_type == 'test':
+            # Handle test mode commands
+            command = data.get('command')
+            if command == 'set_test_mode':
+                test_mode = data.get('mode')
+                if test_mode in ['auto', 'max_pressure', 'max_flow', 'off']:
+                    if self.application:
+                        self.application.shared_testmode = test_mode
+                        log.info(f"Test mode set to: {test_mode}")
+                    else:
+                        log.error("Application reference not set in server")
+                else:
+                    log.warning(f"Invalid test mode: {test_mode}")
+            elif command == 'cancel_test':
+                # Cancel current test
+                if self.application:
+                    self.application.shared_testmode = "off"
+                    log.info("Test cancelled, mode set to: off")
+            else:
+                log.debug(f"Unknown test command: {command}")
         elif message_type == 'get_state':
             # Send current state
             await self.send_state_to_client(ws)

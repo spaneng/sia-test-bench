@@ -161,6 +161,9 @@ export function ControlPlane() {
   };
 
   const handleTestButtonClick = (testType: 'auto' | 'max_pressure' | 'max_flow') => {
+    // Send test mode to backend
+    sendMessage({ type: 'test', command: 'set_test_mode', mode: testType });
+    
     if (currentTestView === 'none') {
       // First time selecting a test - exit header and buttons
       setTestHeaderExiting(true);
@@ -187,6 +190,9 @@ export function ControlPlane() {
   };
 
   const handleCancelTest = () => {
+    // Send message to cancel test
+    sendMessage({ type: 'test', command: 'cancel_test' });
+    
     // Exit test view and return to test selection (no animation)
     setCurrentTestView('none');
     setTestViewExiting(false);
@@ -200,8 +206,6 @@ export function ControlPlane() {
     setPressureTestProgress(0);
     setFlowTestProgress(0);
     setIsTestRunning(false);
-    // Send message to cancel test
-    sendMessage({ type: 'test', command: 'cancel_test' });
   };
 
   const handleConfirmValves = () => {
@@ -241,6 +245,9 @@ export function ControlPlane() {
   };
 
   const handleChangePump = () => {
+    // Reset test mode when changing pumps
+    sendMessage({ type: 'test', command: 'set_test_mode', mode: 'off' });
+    
     setIsExiting(true);
     setTestViewExiting(true);
     setTestHeaderExiting(false);

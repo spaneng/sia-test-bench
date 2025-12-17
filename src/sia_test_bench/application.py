@@ -20,14 +20,20 @@ class SiaTestBenchApplication(Application):
         self.state: SiaTestBenchState = None
         self.server: TestBenchServer = None
         self.previous_data: dict = None
+        self.shared_testmode = "off"
+        self.max_pressure_run_start_time: float = None
+        self.max_flow_run_start_time: float = None
 
     async def setup(self):
         """Initialize the state machine and web server."""
         self.state = SiaTestBenchState(app=self)
-        self.server = TestBenchServer(state=self.state)
+        self.server = TestBenchServer(state=self.state, app=self)
         await self.server.setup()
 
     async def main_loop(self):
+
+        state = await self.state.spin_state()
+        
         """Main application loop - called periodically."""
         # Get tag values for system data
         try:
@@ -101,22 +107,46 @@ class SiaTestBenchApplication(Application):
     def check_off_command(self):
         return False
     def check_auto_command(self):
-        return True 
+        if self.shared_testmode == "auto":
+            return True
+        else:
+            return False
     def check_auto_ready(self):
         return True
     def check_max_pressure_command(self):
-        return True
+        if self.shared_testmode == "max_pressure":
+            return True
+        else:
+            return False
     def check_max_pressure_end_ready(self):
         return True
     def check_max_flow_command(self):
-        return True
+        if self.shared_testmode == "max_flow":
+            return True
+        else:
+            return False
     def check_max_pressure_run_ready(self):
         return True
     def check_max_pressure_end_ready(self):
-        return True
+        # Check if 30 seconds have elapsed since entering max_pressure_run
+        if self.max_pressure_run_start_time is None:
+            return False
+        elapsed_time = time.time() - self.max_pressure_run_start_time
+        return elapsed_time >= 10.0
     def check_max_flow_start_ready(self):
         return True
     def check_max_flow_run_ready(self):
         return True
     def check_max_flow_end_ready(self):
-        return True
+        # Check if 30 seconds have elapsed since entering max_flow_run
+        if self.max_flow_run_start_time is None:
+            return False
+        elapsed_time = time.time() - self.max_flow_run_start_time
+        return elapsed_time >= 10.0
+
+
+    def clear_shared_testmode(self):
+        self.shared_testmode = "off"
+        # Reset timers when clearing test mode
+        self.max_pressure_run_start_time = None
+        self.max_flow_run_start_time = None

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useTestBenchStore, type PumpData } from '../store/useTestBenchStore';
 
-const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
-
+// const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8092/ws';
 // Module-level flag to prevent multiple connections
 let globalConnectionActive = false;
 

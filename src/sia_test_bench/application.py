@@ -23,7 +23,7 @@ class SiaTestBenchApplication(Application):
 
     async def setup(self):
         """Initialize the state machine and web server."""
-        self.state = SiaTestBenchState()
+        self.state = SiaTestBenchState(app=self)
         self.server = TestBenchServer(state=self.state)
         await self.server.setup()
 
@@ -97,3 +97,26 @@ class SiaTestBenchApplication(Application):
         """Cleanup resources when shutting down."""
         if self.server:
             await self.server.cleanup()
+
+    def check_off_command(self):
+        return False
+    def check_auto_command(self):
+        return True 
+    def check_auto_ready(self):
+        return True
+    def check_max_pressure_command(self):
+        return True
+    def check_max_pressure_end_ready(self):
+        return True
+    def check_max_flow_command(self):
+        return True
+    def check_max_pressure_run_ready(self):
+        return True
+    def check_max_pressure_end_ready(self):
+        return True
+    def check_max_flow_start_ready(self):
+        return True
+    def check_max_flow_run_ready(self):
+        return True
+    def check_max_flow_end_ready(self):
+        return True

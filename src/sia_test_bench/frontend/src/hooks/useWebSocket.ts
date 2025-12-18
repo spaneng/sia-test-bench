@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useTestBenchStore, type PumpData } from '../store/useTestBenchStore';
 
-const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
-
+// const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8092/ws';
 // Module-level flag to prevent multiple connections
 let globalConnectionActive = false;
 
@@ -65,6 +65,14 @@ export function useWebSocket() {
               addDataPoint(pumpData);
             } else if (data.type === 'state') {
               setPumpState(data.state);
+            } else if (data.type === 'test_progress') {
+              // Forward test progress to the store
+              const { setTestProgress } = useTestBenchStore.getState();
+              setTestProgress(data.test, data.progress);
+            } else if (data.type === 'test_complete') {
+              // Forward test completion to the store
+              const { setTestComplete } = useTestBenchStore.getState();
+              setTestComplete(data.test);
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);

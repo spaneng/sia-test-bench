@@ -1,0 +1,67 @@
+<svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .component { fill: #f0f0f0; stroke: #333; stroke-width: 2; }
+      .pipe { stroke: #666; stroke-width: 4; fill: none; }
+      .fluid { fill: #a0d0ff; }
+      .label { font-family: Arial, sans-serif; font-size: 12px; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <g id="tank-assembly">
+    <rect id="tank" x="50" y="50" width="60" height="100" class="component" />
+    <rect id="tank-fluid" x="50" y="100" width="60" height="50" class="fluid" />
+    <text x="80" y="165" class="label">Tank</text>
+  </g>
+
+  <line x1="80" y1="150" x2="80" y2="170" class="pipe" />
+  <line x1="80" y1="170" x2="130" y2="170" class="pipe" />
+
+  <g id="valve-assembly" transform="translate(130, 160)">
+    <polygon id="valve" points="0,0 20,10 0,20" class="component" />
+    <text x="10" y="35" class="label">Valve</text>
+  </g>
+  
+  <line x1="150" y1="170" x2="180" y2="170" class="pipe" />
+
+  <g id="sight-glass-assembly" transform="translate(180, 50)">
+    <rect id="sight-glass" x="0" y="0" width="30" height="100" class="component" />
+    <rect id="sight-glass-fluid" x="0" y="50" width="30" height="50" class="fluid" />
+    <text x="15" y="115" class="label">Sight Glass</text>
+  </g>
+
+  <line x1="210" y1="170" x2="250" y2="170" class="pipe" />
+
+  <g id="pressure-sensor-1-assembly" transform="translate(250, 155)">
+    <circle id="pressure-sensor-1" cx="15" cy="15" r="15" class="component" />
+    <text x="15" y="45" class="label">Pressure Sensor</text>
+  </g>
+
+  <line x1="280" y1="170" x2="330" y2="170" class="pipe" />
+
+  <g id="plunger-pump-assembly" transform="translate(330, 130)">
+    <rect id="pump-body" x="0" y="0" width="60" height="40" class="component" />
+    <rect x="20" y="-30" width="20" height="30" class="component" fill="none"/>
+    <rect id="plunger-piston" x="22" y="-25" width="16" height="25" fill="#666">
+      </rect>
+    <text x="30" y="55" class="label">Plunger Pump</text>
+  </g>
+
+  <line x1="390" y1="170" x2="430" y2="170" class="pipe" />
+
+  <g id="pressure-sensor-2-assembly" transform="translate(430, 155)">
+    <circle id="pressure-sensor-2" cx="15" cy="15" r="15" class="component" />
+    <text x="15" y="45" class="label">Pressure Sensor</text>
+  </g>
+
+  <line x1="460" y1="170" x2="500" y2="170" class="pipe" />
+
+  <g id="flow-meter-assembly" transform="translate(500, 150)">
+    <rect id="flow-meter" x="0" y="0" width="40" height="40" class="component" />
+    <path d="M5,20 L35,20 M20,5 L20,35" stroke="#999" stroke-width="2"/>
+    <text x="20" y="55" class="label">Flow Meter</text>
+  </g>
+
+  <line x1="540" y1="170" x2="580" y2="170" class="pipe" />
+
+</svg>

@@ -796,6 +796,24 @@
   text-align: center;
 }
 
+/* Test Completion Section */
+.test-completion-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.completion-message {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #10b981;
+  text-align: center;
+}
+
 /* Loading Spinner */
 .loading-spinner {
   width: 48px;

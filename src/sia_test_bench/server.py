@@ -144,10 +144,33 @@ class TestBenchServer:
                         log.error("Application reference not set in server")
                 else:
                     log.warning(f"Invalid test mode: {test_mode}")
+            elif command == 'confirm_pressure_test':
+                # User clicked Accept button for pressure test
+                if self.application:
+                    self.application.shared_pressure_confirmation = True
+                    log.info("Pressure test confirmation received")
+            elif command == 'confirm_flow_test':
+                # User clicked Accept button for flow test
+                if self.application:
+                    self.application.shared_flow_confirmation = True
+                    log.info("Flow test confirmation received")
+            elif command == 'acknowledge_pressure_complete':
+                # Frontend finished showing pressure test completion message
+                if self.application:
+                    self.application.shared_pressure_complete_acknowledged = True
+                    log.info("Pressure test completion acknowledged by frontend")
+            elif command == 'acknowledge_flow_complete':
+                # Frontend finished showing flow test completion message
+                if self.application:
+                    self.application.shared_flow_complete_acknowledged = True
+                    log.info("Flow test completion acknowledged by frontend")
             elif command == 'cancel_test':
                 # Cancel current test
                 if self.application:
                     self.application.shared_testmode = "off"
+                    # Trigger state machine to transition to off state
+                    if self.state:
+                        await self.state.set_off()
                     log.info("Test cancelled, mode set to: off")
             else:
                 log.debug(f"Unknown test command: {command}")
@@ -164,6 +187,24 @@ class TestBenchServer:
         Args:
             data: Dictionary containing the data packet. Should include 'type': 'data'
                   and fields like 'timestamp', 'pressure', 'flowRate', etc.
+        """
+        await self.broadcast_data(data)
+    
+    async def push_test_progress(self, data: dict):
+        """Push test progress updates to the frontend via WebSocket.
+        
+        Args:
+            data: Dictionary containing test progress. Should include 'type': 'test_progress',
+                  'test': 'max_pressure' or 'max_flow', 'progress': 0-100, etc.
+        """
+        await self.broadcast_data(data)
+    
+    async def push_test_complete(self, data: dict):
+        """Push test completion notification to the frontend via WebSocket.
+        
+        Args:
+            data: Dictionary containing test completion. Should include 'type': 'test_complete',
+                  'test': 'max_pressure' or 'max_flow'.
         """
         await self.broadcast_data(data)
     

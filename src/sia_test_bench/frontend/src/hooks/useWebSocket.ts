@@ -65,6 +65,14 @@ export function useWebSocket() {
               addDataPoint(pumpData);
             } else if (data.type === 'state') {
               setPumpState(data.state);
+            } else if (data.type === 'test_progress') {
+              // Forward test progress to the store
+              const { setTestProgress } = useTestBenchStore.getState();
+              setTestProgress(data.test, data.progress);
+            } else if (data.type === 'test_complete') {
+              // Forward test completion to the store
+              const { setTestComplete } = useTestBenchStore.getState();
+              setTestComplete(data.test);
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);

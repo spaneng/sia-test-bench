@@ -12,11 +12,16 @@ export function ControlPlane() {
     connectionStatus,
     currentTestView,
     targetFlow,
+    maxPressureProgress,
+    maxFlowProgress,
+    maxPressureComplete,
+    maxFlowComplete,
     startPump,
     stopPump,
     setSelectedPump,
     setCurrentTestView,
     setTargetFlow,
+    resetTestProgress,
     fetchAvailablePumps,
     sendMessage,
   } = useTestBenchStore();
@@ -35,8 +40,6 @@ export function ControlPlane() {
   const [popoverExiting, setPopoverExiting] = useState(false);
   const pumpInfoRef = useRef<HTMLDivElement>(null);
   const [manualControlExiting, setManualControlExiting] = useState(false);
-  const [pressureTestProgress, setPressureTestProgress] = useState(0);
-  const [flowTestProgress, setFlowTestProgress] = useState(0);
   const [isTestRunning, setIsTestRunning] = useState(false);
   const [showPumpInfoView, setShowPumpInfoView] = useState(false);
   const [editablePumpData, setEditablePumpData] = useState<{
@@ -53,6 +56,43 @@ export function ControlPlane() {
   useEffect(() => {
     fetchAvailablePumps();
   }, [fetchAvailablePumps]);
+
+  // Handle test completion - auto-return to test selection after 3 seconds
+  useEffect(() => {
+    if (maxPressureComplete && currentTestView === 'max_pressure') {
+      const timer = setTimeout(() => {
+        // Notify backend that frontend has finished showing completion message
+        sendMessage({ type: 'test', command: 'acknowledge_pressure_complete' });
+        
+        // Reset UI state
+        setCurrentTestView('none');
+        resetTestProgress();
+        setMaxPressureConfirmed(false);
+        setMaxPressureVerifying(false);
+        setMaxPressureVerified(false);
+        setIsTestRunning(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [maxPressureComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
+
+  useEffect(() => {
+    if (maxFlowComplete && currentTestView === 'max_flow') {
+      const timer = setTimeout(() => {
+        // Notify backend that frontend has finished showing completion message
+        sendMessage({ type: 'test', command: 'acknowledge_flow_complete' });
+        
+        // Reset UI state
+        setCurrentTestView('none');
+        resetTestProgress();
+        setMaxFlowConfirmed(false);
+        setMaxFlowVerifying(false);
+        setMaxFlowVerified(false);
+        setIsTestRunning(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [maxFlowComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
 
   // Show pump info view when a pump is first selected
   useEffect(() => {
@@ -164,6 +204,9 @@ export function ControlPlane() {
     // Send test mode to backend
     sendMessage({ type: 'test', command: 'set_test_mode', mode: testType });
     
+    // Reset progress when starting a new test
+    resetTestProgress();
+    
     if (currentTestView === 'none') {
       // First time selecting a test - exit header and buttons
       setTestHeaderExiting(true);
@@ -203,19 +246,18 @@ export function ControlPlane() {
     setMaxFlowVerifying(false);
     setMaxPressureVerified(false);
     setMaxFlowVerified(false);
-    setPressureTestProgress(0);
-    setFlowTestProgress(0);
     setIsTestRunning(false);
+    // Reset progress bars
+    resetTestProgress();
   };
 
   const handleConfirmValves = () => {
     if (currentTestView === 'max_pressure') {
       setMaxPressureConfirmed(true);
       setMaxPressureVerifying(true);
-      setPressureTestProgress(0);
       setIsTestRunning(true);
-      // Send message to start pressure test
-      sendMessage({ type: 'test', command: 'start_pressure_test' });
+      // Send confirmation to backend
+      sendMessage({ type: 'test', command: 'confirm_pressure_test' });
       // Simulate verification after 4 seconds
       setTimeout(() => {
         setMaxPressureVerifying(false);
@@ -228,10 +270,9 @@ export function ControlPlane() {
     } else if (currentTestView === 'max_flow') {
       setMaxFlowConfirmed(true);
       setMaxFlowVerifying(true);
-      setFlowTestProgress(0);
       setIsTestRunning(true);
-      // Send message to start flow test
-      sendMessage({ type: 'test', command: 'start_flow_test' });
+      // Send confirmation to backend
+      sendMessage({ type: 'test', command: 'confirm_flow_test' });
       // Simulate verification after 4 seconds
       setTimeout(() => {
         setMaxFlowVerifying(false);
@@ -609,7 +650,12 @@ export function ControlPlane() {
             {currentTestView === 'max_pressure' && (
               <>
                 <div className="test-view" key="max-pressure-view">
-                  {!maxPressureConfirmed ? (
+                  {maxPressureComplete ? (
+                    <div className="test-completion-section">
+                      <div className="success-checkmark">✓</div>
+                      <p className="completion-message">Max Pressure Test Complete</p>
+                    </div>
+                  ) : !maxPressureConfirmed ? (
                     <div className="test-confirmation-section">
                       <p className="confirmation-message">
                         Please confirm the valves and relief have been set
@@ -641,10 +687,10 @@ export function ControlPlane() {
                     <div className="test-progress-bar">
                       <div 
                         className="test-progress-fill" 
-                        style={{ width: `${pressureTestProgress}%` }}
+                        style={{ width: `${maxPressureProgress}%` }}
                       ></div>
                     </div>
-                    <p className="test-progress-text">{pressureTestProgress.toFixed(1)}%</p>
+                    <p className="test-progress-text">{maxPressureProgress.toFixed(1)}%</p>
                   </div>
                 )}
               </>
@@ -652,7 +698,12 @@ export function ControlPlane() {
             {currentTestView === 'max_flow' && (
               <>
                 <div className="test-view" key="max-flow-view">
-                  {!maxFlowConfirmed ? (
+                  {maxFlowComplete ? (
+                    <div className="test-completion-section">
+                      <div className="success-checkmark">✓</div>
+                      <p className="completion-message">Max Flow Test Complete</p>
+                    </div>
+                  ) : !maxFlowConfirmed ? (
                     <div className="test-confirmation-section">
                       <p className="confirmation-message">
                         Please confirm the valves and relief have been set
@@ -684,10 +735,10 @@ export function ControlPlane() {
                     <div className="test-progress-bar">
                       <div 
                         className="test-progress-fill" 
-                        style={{ width: `${flowTestProgress}%` }}
+                        style={{ width: `${maxFlowProgress}%` }}
                       ></div>
                     </div>
-                    <p className="test-progress-text">{flowTestProgress.toFixed(1)}%</p>
+                    <p className="test-progress-text">{maxFlowProgress.toFixed(1)}%</p>
                   </div>
                 )}
               </>

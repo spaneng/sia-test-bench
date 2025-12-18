@@ -8,7 +8,7 @@ class SiaTestBenchState:
     state: str
 
     states = [
-        {"name": "off"},
+        {"name": "off", "on_enter": "on_enter_off"},
         {"name": "auto_start"},
         {"name": "auto_stop"},
         {"name": "max_pressure_start"},
@@ -90,14 +90,19 @@ class SiaTestBenchState:
 
         elif s == "max_pressure_start":
             if self.app.check_max_pressure_run_ready():
-                log.info("Max pressure run ready received")
+                log.info("Max pressure run ready received - user clicked Accept")
+                # Reset confirmation flag after reading it
+                self.app.shared_pressure_confirmation = False
                 await self.start_max_pressure()
         elif s == "max_pressure_run":
             if self.app.check_max_pressure_end_ready():
                 log.info("Max pressure end ready received")
                 await self.stop_max_pressure()
         elif s == "max_pressure_end":
-            if self.app.check_max_pressure_end_ready():
+            if self.app.check_max_pressure_complete():
+                log.info("Max pressure completion acknowledged by frontend")
+                # Reset acknowledgment flag after reading it
+                self.app.shared_pressure_complete_acknowledged = False
                 if self.app.shared_testmode == "auto":
                     log.info("Max flow start ready received")
                     await self.init_max_flow()
@@ -106,16 +111,21 @@ class SiaTestBenchState:
                     await self.set_off()
         elif s == "max_flow_start":
             if self.app.check_max_flow_run_ready():
-                log.info("Max flow run ready received")
+                log.info("Max flow run ready received - user clicked Accept")
+                # Reset confirmation flag after reading it
+                self.app.shared_flow_confirmation = False
                 await self.start_max_flow()
         elif s == "max_flow_run":
             if self.app.check_max_flow_end_ready():
                 log.info("Max flow end ready received")
                 await self.stop_max_flow()
         elif s == "max_flow_end":
-            if self.app.check_max_flow_end_ready():
+            if self.app.check_max_flow_complete():
+                log.info("Max flow completion acknowledged by frontend")
+                # Reset acknowledgment flag after reading it
+                self.app.shared_flow_complete_acknowledged = False
                 if self.app.shared_testmode == "auto":
-                    log.info("Max flow end ready received")
+                    log.info("Auto test complete")
                     self.app.clear_shared_testmode()
                     await self.stop_auto()
                 else:
@@ -136,3 +146,8 @@ class SiaTestBenchState:
         import time
         self.app.max_flow_run_start_time = time.time()
         log.info("Max flow run started - 30 second timer initiated")
+
+    async def on_enter_off(self):
+        """Clean up when entering off state."""
+        log.info("Entering off state - resetting test mode and timers")
+        self.app.clear_shared_testmode()

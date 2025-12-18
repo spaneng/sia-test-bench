@@ -10,6 +10,10 @@ from .server import TestBenchServer
 
 log = logging.getLogger()
 
+# Test duration constants (in seconds) - change these to adjust test lengths
+MAX_PRESSURE_TEST_DURATION = 10.0
+MAX_FLOW_TEST_DURATION = 10.0
+
 
 class SiaTestBenchApplication(Application):
     config: SiaTestBenchConfig  # not necessary, but helps your IDE provide autocomplete!
@@ -23,6 +27,11 @@ class SiaTestBenchApplication(Application):
         self.shared_testmode = "off"
         self.max_pressure_run_start_time: float = None
         self.max_flow_run_start_time: float = None
+        self.shared_pressure_confirmation: bool = False
+        self.shared_flow_confirmation: bool = False
+        self.shared_pressure_complete_acknowledged: bool = False
+        self.shared_flow_complete_acknowledged: bool = False
+        self.previous_state: str = None
 
     async def setup(self):
         """Initialize the state machine and web server."""
@@ -35,6 +44,13 @@ class SiaTestBenchApplication(Application):
         state = await self.state.spin_state()
         
         """Main application loop - called periodically."""
+        
+        # Check for state changes and notify frontend
+        await self.check_state_changes(state)
+        
+        # Send test progress updates if in a test run state
+        await self.send_test_progress_updates(state)
+        
         # Get tag values for system data
         try:
             pressure = self.get_tag("value", self.config.pressure_sensor_app.value)
@@ -126,27 +142,94 @@ class SiaTestBenchApplication(Application):
         else:
             return False
     def check_max_pressure_run_ready(self):
-        return True
+        return self.shared_pressure_confirmation
     def check_max_pressure_end_ready(self):
-        # Check if 30 seconds have elapsed since entering max_pressure_run
+        # Check if test duration has elapsed since entering max_pressure_run
         if self.max_pressure_run_start_time is None:
             return False
         elapsed_time = time.time() - self.max_pressure_run_start_time
-        return elapsed_time >= 10.0
+        return elapsed_time >= MAX_PRESSURE_TEST_DURATION
     def check_max_flow_start_ready(self):
         return True
     def check_max_flow_run_ready(self):
-        return True
+        return self.shared_flow_confirmation
     def check_max_flow_end_ready(self):
-        # Check if 30 seconds have elapsed since entering max_flow_run
+        # Check if test duration has elapsed since entering max_flow_run
         if self.max_flow_run_start_time is None:
             return False
         elapsed_time = time.time() - self.max_flow_run_start_time
-        return elapsed_time >= 10.0
+        return elapsed_time >= MAX_FLOW_TEST_DURATION
 
+    def check_max_pressure_complete(self):
+        # Check if frontend has acknowledged the pressure test completion
+        return self.shared_pressure_complete_acknowledged
+
+    def check_max_flow_complete(self):
+        # Check if frontend has acknowledged the flow test completion
+        return self.shared_flow_complete_acknowledged
 
     def clear_shared_testmode(self):
         self.shared_testmode = "off"
         # Reset timers when clearing test mode
         self.max_pressure_run_start_time = None
         self.max_flow_run_start_time = None
+        # Reset confirmation flags
+        self.shared_pressure_confirmation = False
+        self.shared_flow_confirmation = False
+        # Reset completion acknowledgment flags
+        self.shared_pressure_complete_acknowledged = False
+        self.shared_flow_complete_acknowledged = False
+        # Reset completion acknowledgment flags
+        self.shared_pressure_complete_acknowledged = False
+        self.shared_flow_complete_acknowledged = False
+
+    async def check_state_changes(self, state: str):
+        """Detect state changes and notify frontend of important transitions."""
+        if state != self.previous_state:
+            log.info(f"State changed from {self.previous_state} to {state}")
+            
+            # Notify frontend when tests complete
+            if state == "max_pressure_end" and self.previous_state == "max_pressure_run":
+                await self.server.push_test_complete({
+                    'type': 'test_complete',
+                    'test': 'max_pressure'
+                })
+                log.info("Max pressure test completed - notifying frontend")
+                # Reset the acknowledgment flag for next test
+                self.shared_pressure_complete_acknowledged = False
+            
+            elif state == "max_flow_end" and self.previous_state == "max_flow_run":
+                await self.server.push_test_complete({
+                    'type': 'test_complete',
+                    'test': 'max_flow'
+                })
+                log.info("Max flow test completed - notifying frontend")
+                # Reset the acknowledgment flag for next test
+                self.shared_flow_complete_acknowledged = False
+            
+            self.previous_state = state
+
+    async def send_test_progress_updates(self, state: str):
+        """Send progress updates for currently running tests."""
+        
+        if state == "max_pressure_run" and self.max_pressure_run_start_time is not None:
+            elapsed = time.time() - self.max_pressure_run_start_time
+            progress = min(100.0, (elapsed / MAX_PRESSURE_TEST_DURATION) * 100.0)
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'max_pressure',
+                'progress': progress,
+                'elapsed': elapsed,
+                'duration': MAX_PRESSURE_TEST_DURATION
+            })
+        
+        elif state == "max_flow_run" and self.max_flow_run_start_time is not None:
+            elapsed = time.time() - self.max_flow_run_start_time
+            progress = min(100.0, (elapsed / MAX_FLOW_TEST_DURATION) * 100.0)
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'max_flow',
+                'progress': progress,
+                'elapsed': elapsed,
+                'duration': MAX_FLOW_TEST_DURATION
+            })

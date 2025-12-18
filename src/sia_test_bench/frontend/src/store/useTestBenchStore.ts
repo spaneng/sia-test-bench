@@ -44,6 +44,10 @@ export interface TestBenchState {
   
   // Test state
   currentTestView: TestView;
+  maxPressureProgress: number;
+  maxFlowProgress: number;
+  maxPressureComplete: boolean;
+  maxFlowComplete: boolean;
   
   // Data
   dataHistory: PumpData[];
@@ -58,6 +62,9 @@ export interface TestBenchState {
   setSelectedPump: (pump: PumpType | null) => void;
   setCurrentTestView: (view: TestView) => void;
   setTargetFlow: (flow: number) => void;
+  setTestProgress: (test: string, progress: number) => void;
+  setTestComplete: (test: string) => void;
+  resetTestProgress: () => void;
   fetchAvailablePumps: () => Promise<void>;
   sendMessage: (message: object) => void;
   setSendMessage: (fn: (message: object) => void) => void;
@@ -82,6 +89,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   isRunning: false,
   targetFlow: 0,
   currentTestView: 'none',
+  maxPressureProgress: 0,
+  maxFlowProgress: 0,
+  maxPressureComplete: false,
+  maxFlowComplete: false,
   dataHistory: [],
   latestData: null,
   
@@ -101,6 +112,22 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   
   setTargetFlow: (flow) => set({ targetFlow: flow }),
   
+  setTestProgress: (test, progress) => {
+    if (test === 'max_pressure') {
+      set({ maxPressureProgress: progress });
+    } else if (test === 'max_flow') {
+      set({ maxFlowProgress: progress });
+    }
+  },
+  
+  setTestComplete: (test) => {
+    if (test === 'max_pressure') {
+      set({ maxPressureComplete: true, maxPressureProgress: 100 });
+    } else if (test === 'max_flow') {
+      set({ maxFlowComplete: true, maxFlowProgress: 100 });
+    }
+  },
+  
   addDataPoint: (data) => {
     const currentHistory = get().dataHistory;
     const newHistory = [...currentHistory, data].slice(-1000); // Keep last 1000 points
@@ -111,6 +138,13 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   },
   
   clearData: () => set({ dataHistory: [], latestData: null }),
+  
+  resetTestProgress: () => set({ 
+    maxPressureProgress: 0, 
+    maxFlowProgress: 0,
+    maxPressureComplete: false,
+    maxFlowComplete: false
+  }),
   
   sendMessage: () => {
     console.warn('WebSocket not initialized yet');

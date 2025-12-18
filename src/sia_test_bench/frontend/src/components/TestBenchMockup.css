@@ -26,6 +26,7 @@
   height: auto;
   max-height: 400px;
   display: block;
+  transform: scale(0.80);
 }
 
 .component-label {
@@ -65,6 +66,13 @@
 
 .flow-indicator {
   pointer-events: none;
+}
+
+.test-bench-mockup-containers {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 @keyframes flow-animation {

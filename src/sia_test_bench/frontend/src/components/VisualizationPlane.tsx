@@ -61,22 +61,22 @@ export function VisualizationPlane() {
 
   return (
     <div className="visualization-plane">
-      <div className="viz-header">
+      {/* <div className="viz-header">
         <h2>Live Data Visualization</h2>
         <div className="data-status">
           <span>Data Points: {dataHistory.length}</span>
         </div>
-      </div>
+      </div> */}
 
-      {connectionStatus !== 'connected' && (
+      {/* {connectionStatus !== 'connected' && (
         <div className="connection-warning">
           <p>Not connected to backend. Data visualization unavailable.</p>
         </div>
-      )}
+      )} */}
 
       {/* Mini Live Charts - Real-time visualizations */}
       <div className="current-values">
-        <h3>Live Metrics</h3>
+        {/* <h3>Live Metrics</h3> */}
         <div className="value-grid">
           <MiniLiveChart
             label="Pressure"

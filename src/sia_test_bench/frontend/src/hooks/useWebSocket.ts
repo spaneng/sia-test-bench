@@ -73,6 +73,10 @@ export function useWebSocket() {
               // Forward test completion to the store
               const { setTestComplete } = useTestBenchStore.getState();
               setTestComplete(data.test);
+            } else if (data.type === 'state_machine') {
+              // Forward state machine state to the store
+              const { setStateMachineState } = useTestBenchStore.getState();
+              setStateMachineState(data.state);
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);

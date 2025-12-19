@@ -11,11 +11,14 @@ export function ControlPlane() {
     isRunning,
     connectionStatus,
     currentTestView,
+    stateMachineState,
     targetFlow,
     maxPressureProgress,
     maxFlowProgress,
+    flowAccuracyProgress,
     maxPressureComplete,
     maxFlowComplete,
+    flowAccuracyComplete,
     startPump,
     stopPump,
     setSelectedPump,
@@ -32,10 +35,13 @@ export function ControlPlane() {
   const [testHeaderExiting, setTestHeaderExiting] = useState(false);
   const [maxPressureConfirmed, setMaxPressureConfirmed] = useState(false);
   const [maxFlowConfirmed, setMaxFlowConfirmed] = useState(false);
+  const [flowAccuracyConfirmed, setFlowAccuracyConfirmed] = useState(false);
   const [maxPressureVerifying, setMaxPressureVerifying] = useState(false);
   const [maxFlowVerifying, setMaxFlowVerifying] = useState(false);
+  const [flowAccuracyVerifying, setFlowAccuracyVerifying] = useState(false);
   const [maxPressureVerified, setMaxPressureVerified] = useState(false);
   const [maxFlowVerified, setMaxFlowVerified] = useState(false);
+  const [flowAccuracyVerified, setFlowAccuracyVerified] = useState(false);
   const [showPumpInfoPopover, setShowPumpInfoPopover] = useState(false);
   const [popoverExiting, setPopoverExiting] = useState(false);
   const pumpInfoRef = useRef<HTMLDivElement>(null);
@@ -57,42 +63,77 @@ export function ControlPlane() {
     fetchAvailablePumps();
   }, [fetchAvailablePumps]);
 
-  // Handle test completion - auto-return to test selection after 3 seconds
+  // Handle test completion - auto-return to test selection after 3 seconds (only in standalone mode)
   useEffect(() => {
-    if (maxPressureComplete && currentTestView === 'max_pressure') {
+    if (maxPressureComplete) {
       const timer = setTimeout(() => {
         // Notify backend that frontend has finished showing completion message
         sendMessage({ type: 'test', command: 'acknowledge_pressure_complete' });
         
-        // Reset UI state
-        setCurrentTestView('none');
-        resetTestProgress();
+        // Only reset to 'none' if not in auto mode
+        if (currentTestView === 'max_pressure') {
+          setCurrentTestView('none');
+          resetTestProgress();
+          setIsTestRunning(false);
+        }
+        
+        // Reset test-specific flags
         setMaxPressureConfirmed(false);
         setMaxPressureVerifying(false);
         setMaxPressureVerified(false);
-        setIsTestRunning(false);
       }, 3000);
       return () => clearTimeout(timer);
     }
   }, [maxPressureComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
 
   useEffect(() => {
-    if (maxFlowComplete && currentTestView === 'max_flow') {
+    if (maxFlowComplete) {
       const timer = setTimeout(() => {
         // Notify backend that frontend has finished showing completion message
         sendMessage({ type: 'test', command: 'acknowledge_flow_complete' });
         
-        // Reset UI state
-        setCurrentTestView('none');
-        resetTestProgress();
+        // Only reset to 'none' if not in auto mode
+        if (currentTestView === 'max_flow') {
+          setCurrentTestView('none');
+          resetTestProgress();
+          setIsTestRunning(false);
+        }
+        
+        // Reset test-specific flags
         setMaxFlowConfirmed(false);
         setMaxFlowVerifying(false);
         setMaxFlowVerified(false);
-        setIsTestRunning(false);
       }, 3000);
       return () => clearTimeout(timer);
     }
   }, [maxFlowComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
+
+  useEffect(() => {
+    if (flowAccuracyComplete) {
+      const timer = setTimeout(() => {
+        // Notify backend that frontend has finished showing completion message
+        sendMessage({ type: 'test', command: 'acknowledge_flow_accuracy_complete' });
+        
+        // Only reset to 'none' if not in auto mode
+        if (currentTestView === 'flow_accuracy') {
+          setCurrentTestView('none');
+          resetTestProgress();
+          setIsTestRunning(false);
+        } else if (currentTestView === 'auto') {
+          // In auto mode, after flow accuracy completes, return to test selection
+          setCurrentTestView('none');
+          resetTestProgress();
+          setIsTestRunning(false);
+        }
+        
+        // Reset test-specific flags
+        setFlowAccuracyConfirmed(false);
+        setFlowAccuracyVerifying(false);
+        setFlowAccuracyVerified(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [flowAccuracyComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
 
   // Show pump info view when a pump is first selected
   useEffect(() => {
@@ -153,6 +194,7 @@ export function ControlPlane() {
   // Check if a test is in progress (after accept button is clicked)
   const isTestInProgress = (currentTestView === 'max_pressure' && maxPressureConfirmed) ||
                            (currentTestView === 'max_flow' && maxFlowConfirmed) ||
+                           (currentTestView === 'flow_accuracy' && flowAccuracyConfirmed) ||
                            currentTestView === 'auto';
 
   // Handle exit transition when manual control gets disabled
@@ -200,7 +242,7 @@ export function ControlPlane() {
     }
   };
 
-  const handleTestButtonClick = (testType: 'auto' | 'max_pressure' | 'max_flow') => {
+  const handleTestButtonClick = (testType: 'auto' | 'max_pressure' | 'max_flow' | 'flow_accuracy') => {
     // Send test mode to backend
     sendMessage({ type: 'test', command: 'set_test_mode', mode: testType });
     
@@ -225,10 +267,13 @@ export function ControlPlane() {
     // Reset confirmations when switching tests
     setMaxPressureConfirmed(false);
     setMaxFlowConfirmed(false);
+    setFlowAccuracyConfirmed(false);
     setMaxPressureVerifying(false);
     setMaxFlowVerifying(false);
+    setFlowAccuracyVerifying(false);
     setMaxPressureVerified(false);
     setMaxFlowVerified(false);
+    setFlowAccuracyVerified(false);
     // TODO: For auto test, implement sequential execution of max pressure and max flow tests
   };
 
@@ -242,17 +287,28 @@ export function ControlPlane() {
     // Reset confirmations when canceling
     setMaxPressureConfirmed(false);
     setMaxFlowConfirmed(false);
+    setFlowAccuracyConfirmed(false);
     setMaxPressureVerifying(false);
     setMaxFlowVerifying(false);
+    setFlowAccuracyVerifying(false);
     setMaxPressureVerified(false);
     setMaxFlowVerified(false);
+    setFlowAccuracyVerified(false);
     setIsTestRunning(false);
     // Reset progress bars
     resetTestProgress();
   };
 
   const handleConfirmValves = () => {
-    if (currentTestView === 'max_pressure') {
+    // Determine which test to confirm based on currentTestView or stateMachineState (for auto mode)
+    const testToConfirm = currentTestView === 'auto' 
+      ? (stateMachineState.includes('max_pressure') ? 'max_pressure' 
+         : stateMachineState.includes('max_flow') && !stateMachineState.includes('flow_accuracy') ? 'max_flow'
+         : stateMachineState.includes('flow_accuracy') ? 'flow_accuracy'
+         : null)
+      : currentTestView;
+    
+    if (testToConfirm === 'max_pressure') {
       setMaxPressureConfirmed(true);
       setMaxPressureVerifying(true);
       setIsTestRunning(true);
@@ -267,7 +323,7 @@ export function ControlPlane() {
           setMaxPressureVerified(false);
         }, 2000);
       }, 4000);
-    } else if (currentTestView === 'max_flow') {
+    } else if (testToConfirm === 'max_flow') {
       setMaxFlowConfirmed(true);
       setMaxFlowVerifying(true);
       setIsTestRunning(true);
@@ -280,6 +336,21 @@ export function ControlPlane() {
         // After showing green tick for 2 seconds, proceed to test content
         setTimeout(() => {
           setMaxFlowVerified(false);
+        }, 2000);
+      }, 4000);
+    } else if (testToConfirm === 'flow_accuracy') {
+      setFlowAccuracyConfirmed(true);
+      setFlowAccuracyVerifying(true);
+      setIsTestRunning(true);
+      // Send confirmation to backend
+      sendMessage({ type: 'test', command: 'confirm_flow_accuracy_test' });
+      // Simulate verification after 4 seconds
+      setTimeout(() => {
+        setFlowAccuracyVerifying(false);
+        setFlowAccuracyVerified(true);
+        // After showing green tick for 2 seconds, proceed to test content
+        setTimeout(() => {
+          setFlowAccuracyVerified(false);
         }, 2000);
       }, 4000);
     }
@@ -619,6 +690,12 @@ export function ControlPlane() {
               >
                 Max Flow
               </button>
+              <button
+                className="btn btn-test"
+                onClick={() => handleTestButtonClick('flow_accuracy')}
+              >
+                Flow Accuracy
+              </button>
             </div>
           </>
         )}
@@ -634,6 +711,7 @@ export function ControlPlane() {
                 {currentTestView === 'auto' && 'Auto Test'}
                 {currentTestView === 'max_pressure' && 'Max Pressure Test'}
                 {currentTestView === 'max_flow' && 'Max Flow Test'}
+                {currentTestView === 'flow_accuracy' && 'Flow Accuracy Test'}
               </h4>
               <button
                 className="btn btn-cancel-test"
@@ -643,9 +721,161 @@ export function ControlPlane() {
               </button>
             </div>
             {currentTestView === 'auto' && (
-              <div className="test-view" key="auto-view">
-                <p>Running Max Pressure Test and Max Flow Test sequentially...</p>
-              </div>
+              <>
+                {/* Show Max Pressure Test UI when in max_pressure states */}
+                {(stateMachineState === 'max_pressure_start' || stateMachineState === 'max_pressure_run' || stateMachineState === 'max_pressure_end') && (
+                  <>
+                    <div className="test-view" key="auto-max-pressure-view">
+                      {maxPressureComplete ? (
+                        <div className="test-completion-section">
+                          <div className="success-checkmark">✓</div>
+                          <p className="completion-message">Max Pressure Test Complete</p>
+                        </div>
+                      ) : !maxPressureConfirmed ? (
+                        <div className="test-confirmation-section">
+                          <p className="confirmation-message">
+                            Please confirm the valves and relief have been set
+                          </p>
+                          <button
+                            className="btn btn-primary btn-confirm"
+                            onClick={handleConfirmValves}
+                          >
+                            Accept
+                          </button>
+                        </div>
+                      ) : maxPressureVerifying ? (
+                        <div className="test-verification-section">
+                          <div className="loading-spinner"></div>
+                          <p className="verification-message">Verifying pressure...</p>
+                        </div>
+                      ) : maxPressureVerified ? (
+                        <div className="test-verification-section">
+                          <div className="success-checkmark">✓</div>
+                          <p className="verification-message">Verifying pressure...</p>
+                        </div>
+                      ) : (
+                        <p>Max Pressure Test section content will go here.</p>
+                      )}
+                    </div>
+                    {isTestRunning && maxPressureConfirmed && !maxPressureVerifying && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${maxPressureProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{maxPressureProgress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {/* Show Max Flow Test UI when in max_flow states */}
+                {(stateMachineState === 'max_flow_start' || stateMachineState === 'max_flow_run' || stateMachineState === 'max_flow_end') && (
+                  <>
+                    <div className="test-view" key="auto-max-flow-view">
+                      {maxFlowComplete ? (
+                        <div className="test-completion-section">
+                          <div className="success-checkmark">✓</div>
+                          <p className="completion-message">Max Flow Test Complete</p>
+                        </div>
+                      ) : !maxFlowConfirmed ? (
+                        <div className="test-confirmation-section">
+                          <p className="confirmation-message">
+                            Please confirm the valves and relief have been set
+                          </p>
+                          <button
+                            className="btn btn-primary btn-confirm"
+                            onClick={handleConfirmValves}
+                          >
+                            Accept
+                          </button>
+                        </div>
+                      ) : maxFlowVerifying ? (
+                        <div className="test-verification-section">
+                          <div className="loading-spinner"></div>
+                          <p className="verification-message">Verifying flow...</p>
+                        </div>
+                      ) : maxFlowVerified ? (
+                        <div className="test-verification-section">
+                          <div className="success-checkmark">✓</div>
+                          <p className="verification-message">Verifying flow...</p>
+                        </div>
+                      ) : (
+                        <p>Max Flow Test section content will go here.</p>
+                      )}
+                    </div>
+                    {isTestRunning && maxFlowConfirmed && !maxFlowVerifying && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${maxFlowProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{maxFlowProgress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {/* Show Flow Accuracy Test UI when in flow_accuracy states */}
+                {(stateMachineState === 'flow_accuracy_start' || stateMachineState === 'flow_accuracy_run' || stateMachineState === 'flow_accuracy_end') && (
+                  <>
+                    <div className="test-view" key="auto-flow-accuracy-view">
+                      {flowAccuracyComplete ? (
+                        <div className="test-completion-section">
+                          <div className="success-checkmark">✓</div>
+                          <p className="completion-message">Flow Accuracy Test Complete</p>
+                        </div>
+                      ) : !flowAccuracyConfirmed ? (
+                        <div className="test-confirmation-section">
+                          <p className="confirmation-message">
+                            Please confirm the valves and relief have been set
+                          </p>
+                          <button
+                            className="btn btn-primary btn-confirm"
+                            onClick={handleConfirmValves}
+                          >
+                            Accept
+                          </button>
+                        </div>
+                      ) : flowAccuracyVerifying ? (
+                        <div className="test-verification-section">
+                          <div className="loading-spinner"></div>
+                          <p className="verification-message">Verifying flow...</p>
+                        </div>
+                      ) : flowAccuracyVerified ? (
+                        <div className="test-verification-section">
+                          <div className="success-checkmark">✓</div>
+                          <p className="verification-message">Verifying flow...</p>
+                        </div>
+                      ) : (
+                        <p>Flow Accuracy Test section content will go here.</p>
+                      )}
+                    </div>
+                    {isTestRunning && flowAccuracyConfirmed && !flowAccuracyVerifying && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${flowAccuracyProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{flowAccuracyProgress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {/* Show initial state when auto test hasn't started yet */}
+                {stateMachineState === 'auto_start' && (
+                  <div className="test-view" key="auto-starting-view">
+                    <p>Initializing auto test sequence...</p>
+                  </div>
+                )}
+              </>
             )}
             {currentTestView === 'max_pressure' && (
               <>
@@ -739,6 +969,55 @@ export function ControlPlane() {
                       ></div>
                     </div>
                     <p className="test-progress-text">{maxFlowProgress.toFixed(1)}%</p>
+                  </div>
+                )}
+              </>
+            )}
+            
+            {currentTestView === 'flow_accuracy' && (
+              <>
+                <div className="test-view" key="flow-accuracy-view">
+                  {flowAccuracyComplete ? (
+                    <div className="test-completion-section">
+                      <div className="success-checkmark">✓</div>
+                      <p className="completion-message">Flow Accuracy Test Complete</p>
+                    </div>
+                  ) : !flowAccuracyConfirmed ? (
+                    <div className="test-confirmation-section">
+                      <p className="confirmation-message">
+                        Please confirm the valves and relief have been set
+                      </p>
+                      <button
+                        className="btn btn-primary btn-confirm"
+                        onClick={handleConfirmValves}
+                      >
+                        Accept
+                      </button>
+                    </div>
+                  ) : flowAccuracyVerifying ? (
+                    <div className="test-verification-section">
+                      <div className="loading-spinner"></div>
+                      <p className="verification-message">Verifying flow...</p>
+                    </div>
+                  ) : flowAccuracyVerified ? (
+                    <div className="test-verification-section">
+                      <div className="success-checkmark">✓</div>
+                      <p className="verification-message">Verifying flow...</p>
+                    </div>
+                  ) : (
+                    <p>Flow Accuracy Test section content will go here.</p>
+                  )}
+                </div>
+                {/* Progress bar at bottom of test section */}
+                {isTestRunning && currentTestView === 'flow_accuracy' && flowAccuracyConfirmed && !flowAccuracyVerifying && (
+                  <div className="test-progress-container">
+                    <div className="test-progress-bar">
+                      <div 
+                        className="test-progress-fill" 
+                        style={{ width: `${flowAccuracyProgress}%` }}
+                      ></div>
+                    </div>
+                    <p className="test-progress-text">{flowAccuracyProgress.toFixed(1)}%</p>
                   </div>
                 )}
               </>

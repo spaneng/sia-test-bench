@@ -25,7 +25,7 @@ export interface PumpType {
   strokeLength?: number;
 }
 
-export type TestView = 'none' | 'auto' | 'max_pressure' | 'max_flow';
+export type TestView = 'none' | 'auto' | 'max_pressure' | 'max_flow' | 'flow_accuracy';
 
 export interface TestBenchState {
   // Connection state
@@ -44,10 +44,13 @@ export interface TestBenchState {
   
   // Test state
   currentTestView: TestView;
+  stateMachineState: string;  // Backend state machine state (e.g., 'off', 'max_pressure_start', 'max_pressure_run', etc.)
   maxPressureProgress: number;
   maxFlowProgress: number;
+  flowAccuracyProgress: number;
   maxPressureComplete: boolean;
   maxFlowComplete: boolean;
+  flowAccuracyComplete: boolean;
   
   // Data
   dataHistory: PumpData[];
@@ -62,6 +65,7 @@ export interface TestBenchState {
   setSelectedPump: (pump: PumpType | null) => void;
   setCurrentTestView: (view: TestView) => void;
   setTargetFlow: (flow: number) => void;
+  setStateMachineState: (state: string) => void;
   setTestProgress: (test: string, progress: number) => void;
   setTestComplete: (test: string) => void;
   resetTestProgress: () => void;
@@ -91,10 +95,13 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   isRunning: false,
   targetFlow: 0,
   currentTestView: 'none',
+  stateMachineState: 'off',
   maxPressureProgress: 0,
   maxFlowProgress: 0,
+  flowAccuracyProgress: 0,
   maxPressureComplete: false,
   maxFlowComplete: false,
+  flowAccuracyComplete: false,
   dataHistory: [],
   latestData: null,
   
@@ -114,11 +121,15 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   
   setTargetFlow: (flow) => set({ targetFlow: flow }),
   
+  setStateMachineState: (state) => set({ stateMachineState: state }),
+  
   setTestProgress: (test, progress) => {
     if (test === 'max_pressure') {
       set({ maxPressureProgress: progress });
     } else if (test === 'max_flow') {
       set({ maxFlowProgress: progress });
+    } else if (test === 'flow_accuracy') {
+      set({ flowAccuracyProgress: progress });
     }
   },
   
@@ -127,6 +138,8 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       set({ maxPressureComplete: true, maxPressureProgress: 100 });
     } else if (test === 'max_flow') {
       set({ maxFlowComplete: true, maxFlowProgress: 100 });
+    } else if (test === 'flow_accuracy') {
+      set({ flowAccuracyComplete: true, flowAccuracyProgress: 100 });
     }
   },
   
@@ -144,8 +157,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   resetTestProgress: () => set({ 
     maxPressureProgress: 0, 
     maxFlowProgress: 0,
+    flowAccuracyProgress: 0,
     maxPressureComplete: false,
-    maxFlowComplete: false
+    maxFlowComplete: false,
+    flowAccuracyComplete: false
   }),
   
   sendMessage: () => {

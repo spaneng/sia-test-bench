@@ -136,7 +136,7 @@ class TestBenchServer:
             command = data.get('command')
             if command == 'set_test_mode':
                 test_mode = data.get('mode')
-                if test_mode in ['auto', 'max_pressure', 'max_flow', 'off']:
+                if test_mode in ['auto', 'max_pressure', 'max_flow', 'flow_accuracy', 'off']:
                     if self.application:
                         self.application.shared_testmode = test_mode
                         log.info(f"Test mode set to: {test_mode}")
@@ -154,6 +154,11 @@ class TestBenchServer:
                 if self.application:
                     self.application.shared_flow_confirmation = True
                     log.info("Flow test confirmation received")
+            elif command == 'confirm_flow_accuracy_test':
+                # User clicked Accept button for flow accuracy test
+                if self.application:
+                    self.application.shared_flow_accuracy_confirmation = True
+                    log.info("Flow accuracy test confirmation received")
             elif command == 'acknowledge_pressure_complete':
                 # Frontend finished showing pressure test completion message
                 if self.application:
@@ -164,6 +169,11 @@ class TestBenchServer:
                 if self.application:
                     self.application.shared_flow_complete_acknowledged = True
                     log.info("Flow test completion acknowledged by frontend")
+            elif command == 'acknowledge_flow_accuracy_complete':
+                # Frontend finished showing flow accuracy test completion message
+                if self.application:
+                    self.application.shared_flow_accuracy_complete_acknowledged = True
+                    log.info("Flow accuracy test completion acknowledged by frontend")
             elif command == 'cancel_test':
                 # Cancel current test
                 if self.application:
@@ -207,6 +217,17 @@ class TestBenchServer:
                   'test': 'max_pressure' or 'max_flow'.
         """
         await self.broadcast_data(data)
+    
+    async def push_state_machine_state(self, state: str):
+        """Push the current state machine state to the frontend via WebSocket.
+        
+        Args:
+            state: The current state machine state (e.g., 'off', 'max_pressure_start', 'max_pressure_run', etc.)
+        """
+        await self.broadcast_data({
+            'type': 'state_machine',
+            'state': state
+        })
     
     async def broadcast_data(self, data: dict):
         """Broadcast data to all connected WebSocket clients."""

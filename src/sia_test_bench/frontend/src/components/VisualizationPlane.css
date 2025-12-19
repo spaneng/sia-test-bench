@@ -5,6 +5,7 @@
   padding: 1.5rem;
   background: white;
   overflow-y: auto;
+  position: relative;
 }
 
 .viz-header {

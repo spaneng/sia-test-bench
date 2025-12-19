@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="480" viewBox="0 0 200 160">
+  <g fill="none" stroke="#000" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Side triangles -->
+    <path d="M 10 50 L 10 130 L 62 90 Z" />
+    <path d="M 190 50 L 190 130 L 138 90 Z" />
+
+    <!-- Main body -->
+    <ellipse cx="100" cy="90" rx="72" ry="34" />
+
+    <!-- Top block -->
+    <rect x="75" y="45" width="50" height="28" />
+
+    <!-- Stem + handle -->
+    <line x1="100" y1="12" x2="100" y2="45" />
+    <line x1="78" y1="12" x2="122" y2="12" />
+  </g>
+</svg>

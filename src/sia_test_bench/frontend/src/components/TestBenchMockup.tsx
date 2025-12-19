@@ -253,7 +253,25 @@ export function TestBenchMockup() {
             </g>
       {/* DEPTH GAUGE */}
           <g id="depth-gauge" className="overview-svg-component">
-            <text x="1105.234375" y="419.6875" text-anchor="middle" fill="#000000" font-family="Arial, sans-serif">0.0 kPa</text>
+            <rect 
+                x="980" 
+                y="300" 
+                width="240" 
+                height="70" 
+                fill="white" 
+                stroke="grey" 
+                strokeWidth="2" 
+                rx="5"
+              />
+            <line 
+              x1="1102" 
+              y1="370" 
+              x2="1102" 
+              y2="446" 
+              stroke="grey" 
+              strokeWidth="2"
+            />
+            <text x="1103" y="350" text-anchor="middle" fill="#000000" font-family="Arial, sans-serif">0.0 kPa</text>
             <g clip-path="url(#cc0cbb8ba6)">
               <g clip-path="url(#2925a2cc08)">
                 <path stroke-linecap="butt" transform="matrix(0.749701, 0, 0, 0.749701, 1069.178205, 449.686733)" fill="none" stroke-linejoin="miter" d="M 48.094041 0.0010231 C 21.531383 0.0010231 0.00197799 21.530428 0.00197799 48.093086 C 0.00197799 74.655745 21.531383 96.18515 48.094041 96.18515 C 74.6567 96.18515 96.186105 74.655745 96.186105 48.093086 C 96.186105 21.530428 74.6567 0.0010231 48.094041 0.0010231 Z M 48.094041 0.0010231 " stroke="#000000" stroke-width="8" stroke-opacity="1" stroke-miterlimit="4"/>
@@ -284,7 +302,25 @@ export function TestBenchMockup() {
 
       {/* PRESSURE GAUGE */}
           <g id="pressure-gauge" className="overview-svg-component">
-            <text x="1658.644531" y="418.91604" text-anchor="middle" fill="#000000" font-family="Arial, sans-serif">
+          <rect 
+                x="1520" 
+                y="300" 
+                width="270" 
+                height="70" 
+                fill="white" 
+                stroke="grey" 
+                strokeWidth="2" 
+                rx="5"
+              />
+            <line 
+              x1="1657" 
+              y1="370" 
+              x2="1657" 
+              y2="446" 
+              stroke="grey" 
+              strokeWidth="2"
+            />
+            <text x="1658.644531" y="348.91604" text-anchor="middle" fill="#000000" font-family="Arial, sans-serif">
               {latestData?.pressure != null ? `${latestData.pressure.toFixed(2)} PSI` : 'N/A PSI'}
             </text>
             <g clip-path="url(#8cee11ab9f)">
@@ -390,9 +426,21 @@ export function TestBenchMockup() {
 
         {/* TANK */}
           <g id="tank" className="overview-svg-component">
-            <text x="196.492187" y="295.009766" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
-              {latestData?.tankLevel != null ? `${latestData.tankLevel.toFixed(1)}%` : 'N/A %'}
-            </text>
+            <g className="textBox">
+              <rect 
+                x="110" 
+                y="244" 
+                width="170" 
+                height="70" 
+                fill="white" 
+                stroke="grey" 
+                strokeWidth="2" 
+                rx="5"
+              />
+              <text x="196.492187" y="295.009766" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
+                {latestData?.tankLevel != null ? `${latestData.tankLevel.toFixed(1)} %` : 'N/A %'}
+              </text>
+            </g>
             <g clip-path="url(#854c235f2e)">
               <g clip-path="url(#e7ea87be43)">
                 {/* Tank fill - blue fill based on tank level */}
@@ -420,9 +468,27 @@ export function TestBenchMockup() {
 
       {/* PUMP */}
           <g id="pump" className="overview-svg-component">
-            <text x="1381.886719" y="341.125" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
+              <rect 
+                x="1260" 
+                y="150" 
+                width="240" 
+                height="70" 
+                fill="white" 
+                stroke="grey" 
+                strokeWidth="2" 
+                rx="5"
+              />
+              <line 
+              x1="1382" 
+              y1="220" 
+              x2="1382" 
+              y2="343" 
+              stroke="grey" 
+              strokeWidth="2"
+            />
+            <text x="1381.886719" y="198" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
               {latestData?.pumpDutyCycle != null && typeof latestData.pumpDutyCycle === 'number' 
-                ? `${latestData.pumpDutyCycle.toFixed(1)}%` 
+                ? `${latestData.pumpDutyCycle.toFixed(1)} %` 
                 : 'N/A %'}
             </text>
             <path stroke-linecap="butt" transform="matrix(0.749701, 0, 0, 0.749701, 1340.955136, 542.178799)" fill="none" stroke-linejoin="miter" d="M 0.00252774 2.001982 L 30.999243 2.001982 " stroke="#000000" stroke-width="4" stroke-opacity="1" stroke-miterlimit="4"/>
@@ -478,9 +544,29 @@ export function TestBenchMockup() {
           </g>
       {/* FLOW METER */}
           <g id="flow-meter" className="overview-svg-component">
-            <text x="1932.808594" y="437.429688" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
-              {latestData?.flowRate != null ? `${latestData.flowRate.toFixed(2)} GPM` : 'N/A GPM'}
-            </text>
+            <g className="textBox">
+              <rect 
+                x="1815" 
+                y="150" 
+                width="240" 
+                height="70" 
+                fill="white" 
+                stroke="grey" 
+                strokeWidth="2" 
+                rx="5"
+              />
+              <text x="1932.808594" y="198" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
+                {latestData?.flowRate != null ? `${latestData.flowRate.toFixed(2)} L/Hr` : 'N/A L/Hr'}
+              </text>
+            </g>
+            <line 
+              x1="1932" 
+              y1="220" 
+              x2="1932" 
+              y2="443" 
+              stroke="grey" 
+              strokeWidth="2"
+            />
             <path stroke-linecap="butt" transform="matrix(0.749696, -0.00279231, 0.00279231, 0.749696, 1861.371271, 537.853681)" fill="none" stroke-linejoin="miter" d="M -0.00246735 1.997975 L 187.141032 2.002019 " stroke="#000000" stroke-width="4" stroke-opacity="1" stroke-miterlimit="4"/>
             <g clip-path="url(#b1cf91c887)">
               <g clip-path="url(#68356d5b1d)">

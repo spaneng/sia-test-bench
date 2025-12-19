@@ -94,7 +94,7 @@ export function VisualizationPlane() {
           <MiniLiveChart
             label="Flow Rate"
             data={flowRateData}
-            unit="GPM"
+            unit="L/Hr"
             color="#10b981"
             latestValue={latestData?.flowRate}
           />

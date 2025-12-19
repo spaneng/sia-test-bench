@@ -130,7 +130,7 @@ class TestBenchServer:
                 await self.stop_pump()
             elif command == 'set_target_flow':
                 self.target_flow = float(data.get('value', 0))
-                log.info(f"Target flow set to {self.target_flow} GPM")
+                log.info(f"Target flow set to {self.target_flow} L/Hr")
         elif message_type == 'test':
             # Handle test mode commands
             command = data.get('command')

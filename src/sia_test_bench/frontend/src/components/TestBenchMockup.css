@@ -73,6 +73,29 @@
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
+  /* background-color: #e5e7eb;
+  padding: 30px; */
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  width:90%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.test-bench-mockup-containers svg {
+  display: block;
+  margin: 0 auto;
+}
+
+/* #depth-gauge path {
+  stroke: red;
+} */
+
+#test path {
+  stroke: red;
 }
 
 @keyframes flow-animation {
@@ -85,6 +108,11 @@
   100% {
     opacity: 0.6;
   }
+}
+
+.overview-svg-component text {
+  font-size: 40px;
+  font-weight: 600;
 }
 
 /* Responsive adjustments */

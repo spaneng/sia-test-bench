@@ -76,7 +76,9 @@ export interface TestBenchState {
   setWarningEnabled: () => Promise<void>;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.host}`;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8092';
+// const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.host}`;
+
 
 export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   // Initial state

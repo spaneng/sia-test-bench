@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from urllib.parse import non_hierarchical
 
 from pydoover.docker import Application
 
@@ -57,6 +58,11 @@ class SiaTestBenchApplication(Application):
             tank_level = self.get_tag("level_filled_percentage", self.config.tank_level_app.value)
             flow_rate = self.get_tag("value", self.config.flow_sensor_app.value)
             current_draw = self.get_tag("value", self.config.current_draw_app.value)
+            pump_duty_cycle = self.get_tag("PumpDutyCycle_ReadOnly", self.config.pump_controller.value)
+            
+            if pump_duty_cycle is not None:
+                pump_duty_cycle = round(pump_duty_cycle * 100, 2)
+                
             pulse_rate = 10 #self.get_tag("pulse_rate")
             valve_state = False #self.get_tag("valve_state")
         except Exception as e:
@@ -66,6 +72,7 @@ class SiaTestBenchApplication(Application):
             tank_level = None
             flow_rate = None
             current_draw = None
+            pump_duty_cycle = None
             pulse_rate = None
             valve_state = None
         
@@ -75,6 +82,7 @@ class SiaTestBenchApplication(Application):
             'tankLevel': tank_level,
             'flowRate': flow_rate,
             'currentDraw': current_draw,
+            'pumpDutyCycle': pump_duty_cycle,
             'pulseRate': pulse_rate,
             'valveState': valve_state,
         }
@@ -102,6 +110,7 @@ class SiaTestBenchApplication(Application):
                 'tankLevel': tank_level,
                 'flowRate': flow_rate,
                 'currentDraw': current_draw,
+                'pumpDutyCycle': pump_duty_cycle,
                 'pulseRate': pulse_rate,
                 'valveState': valve_state,
             }

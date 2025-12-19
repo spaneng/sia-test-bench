@@ -17,6 +17,9 @@ class SiaTestBenchState:
         {"name": "max_flow_start"},
         {"name": "max_flow_run", "on_enter": "on_enter_max_flow_run"},
         {"name": "max_flow_end"},
+        {"name": "flow_accuracy_start"},
+        {"name": "flow_accuracy_run", "on_enter": "on_enter_flow_accuracy_run"},
+        {"name": "flow_accuracy_end"},
     ]
 
     transitions = [
@@ -28,8 +31,11 @@ class SiaTestBenchState:
         {"trigger": "init_max_flow", "source": ["off","auto_start","max_pressure_end"], "dest": "max_flow_start"},
         {"trigger": "start_max_flow", "source": "max_flow_start", "dest": "max_flow_run"},
         {"trigger": "stop_max_flow", "source": "max_flow_run", "dest": "max_flow_end"},
+        {"trigger": "init_flow_accuracy", "source": ["off", "max_flow_end"], "dest": "flow_accuracy_start"},
+        {"trigger": "start_flow_accuracy", "source": "flow_accuracy_start", "dest": "flow_accuracy_run"},
+        {"trigger": "stop_flow_accuracy", "source": "flow_accuracy_run", "dest": "flow_accuracy_end"},
         {"trigger": "set_off", "source": "*", "dest": "off"},
-        {"trigger": "stop_auto", "source": "max_flow_end", "dest": "off"},
+        {"trigger": "stop_auto", "source": "flow_accuracy_end", "dest": "off"},
     ]
 
     def __init__(self, app):
@@ -82,6 +88,9 @@ class SiaTestBenchState:
             if self.app.check_max_flow_command():
                 log.info("Max flow command received")
                 await self.init_max_flow()
+            if self.app.check_flow_accuracy_command():
+                log.info("Flow accuracy command received")
+                await self.init_flow_accuracy()
 
         elif s == "auto_start":
             if self.app.check_auto_ready():
@@ -125,6 +134,27 @@ class SiaTestBenchState:
                 # Reset acknowledgment flag after reading it
                 self.app.shared_flow_complete_acknowledged = False
                 if self.app.shared_testmode == "auto":
+                    log.info("Flow accuracy start ready received")
+                    await self.init_flow_accuracy()
+                else:
+                    self.app.clear_shared_testmode()
+                    await self.set_off()
+        elif s == "flow_accuracy_start":
+            if self.app.check_flow_accuracy_run_ready():
+                log.info("Flow accuracy run ready received - user clicked Accept")
+                # Reset confirmation flag after reading it
+                self.app.shared_flow_accuracy_confirmation = False
+                await self.start_flow_accuracy()
+        elif s == "flow_accuracy_run":
+            if self.app.check_flow_accuracy_end_ready():
+                log.info("Flow accuracy end ready received")
+                await self.stop_flow_accuracy()
+        elif s == "flow_accuracy_end":
+            if self.app.check_flow_accuracy_complete():
+                log.info("Flow accuracy completion acknowledged by frontend")
+                # Reset acknowledgment flag after reading it
+                self.app.shared_flow_accuracy_complete_acknowledged = False
+                if self.app.shared_testmode == "auto":
                     log.info("Auto test complete")
                     self.app.clear_shared_testmode()
                     await self.stop_auto()
@@ -145,7 +175,13 @@ class SiaTestBenchState:
         """Set the timer when entering max_flow_run state."""
         import time
         self.app.max_flow_run_start_time = time.time()
-        log.info("Max flow run started - 30 second timer initiated")
+        log.info("Max flow run started - 10 second timer initiated")
+
+    async def on_enter_flow_accuracy_run(self):
+        """Set the timer when entering flow_accuracy_run state."""
+        import time
+        self.app.flow_accuracy_run_start_time = time.time()
+        log.info("Flow accuracy run started - 10 second timer initiated")
 
     async def on_enter_off(self):
         """Clean up when entering off state."""

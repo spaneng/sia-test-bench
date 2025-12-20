@@ -138,6 +138,14 @@
   background-color: aqua;
 }
 
+.tank-fill {
+  transition: y 0.5s ease-in-out, height 0.5s ease-in-out;
+  /* Fallback for browsers that need attribute transitions */
+  transition-property: y, height;
+  transition-duration: 0.5s;
+  transition-timing-function: ease-in-out;
+}
+
 /* Responsive adjustments */
 @media (max-width: 1200px) {
   .test-bench-svg {

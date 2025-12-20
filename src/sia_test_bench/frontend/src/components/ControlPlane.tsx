@@ -1075,7 +1075,7 @@ export function ControlPlane() {
                 type="range"
                 id="target-flow-slider"
                 min="0"
-                max="100"
+                max={selectedPump?.maxFlowRate ?? 100}
                 step="0.1"
                 value={targetFlow}
                 onChange={(e) => {
@@ -1089,12 +1089,13 @@ export function ControlPlane() {
                 type="number"
                 id="target-flow-input"
                 min="0"
-                max="100"
+                max={selectedPump?.maxFlowRate ?? 100}
                 step="0.1"
                 value={targetFlow}
                 onChange={(e) => {
                   const value = parseFloat(e.target.value) || 0;
-                  const clampedValue = Math.max(0, Math.min(100, value));
+                  const maxFlow = selectedPump?.maxFlowRate ?? 100;
+                  const clampedValue = Math.max(0, Math.min(maxFlow, value));
                   setTargetFlow(clampedValue);
                   sendMessage({ type: 'control', command: 'set_target_flow', value: clampedValue });
                 }}

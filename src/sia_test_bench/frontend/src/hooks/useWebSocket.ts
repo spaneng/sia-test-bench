@@ -65,6 +65,10 @@ export function useWebSocket() {
               addDataPoint(pumpData);
             } else if (data.type === 'state') {
               setPumpState(data.state);
+              if (data.targetFlow !== undefined) {
+                const { setTargetFlow } = useTestBenchStore.getState();
+                setTargetFlow(data.targetFlow);
+              }
             } else if (data.type === 'test_progress') {
               // Forward test progress to the store
               const { setTestProgress } = useTestBenchStore.getState();

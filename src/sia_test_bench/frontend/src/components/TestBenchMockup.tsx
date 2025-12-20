@@ -446,6 +446,7 @@ export function TestBenchMockup() {
                 {/* Tank fill - blue fill based on tank level */}
                 {latestData?.tankLevel != null && (
                   <rect
+                    className="tank-fill"
                     x="0.445312"
                     y={587.039062 - (572.039062 * (latestData.tankLevel / 100))}
                     width="392.351563"

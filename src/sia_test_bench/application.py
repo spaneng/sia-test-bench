@@ -135,6 +135,9 @@ class SiaTestBenchApplication(Application):
         """Cleanup resources when shutting down."""
         if self.server:
             await self.server.cleanup()
+            
+    async def set_flow_rate(self, flow_rate: float):
+        await self.set_tag("TargetRate",flow_rate, self.config.pump_controller.value)
 
     def check_off_command(self):
         return False

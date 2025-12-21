@@ -129,8 +129,14 @@ class TestBenchServer:
             elif command == 'stop':
                 await self.stop_pump()
             elif command == 'set_target_flow':
-                self.target_flow = float(data.get('value', 0))
-                log.info(f"Target flow set to {self.target_flow} GPM")
+                flow_rate = float(data.get('value', 0))
+                self.target_flow = flow_rate
+                log.info(f"Target flow set to {self.target_flow} L/Hr")
+                # Call the application's set_flow_rate method
+                if self.application:
+                    await self.application.set_flow_rate(flow_rate)
+                else:
+                    log.warning("Application reference not set, cannot set flow rate")
         elif message_type == 'test':
             # Handle test mode commands
             command = data.get('command')
@@ -257,7 +263,8 @@ class TestBenchServer:
         """Broadcast current state to all connected WebSocket clients."""
         await self.broadcast_data({
             'type': 'state',
-            'state': self.pump_state
+            'state': self.pump_state,
+            'targetFlow': self.target_flow
         })
 
     async def send_state_to_client(self, ws: web.WebSocketResponse):
@@ -265,7 +272,8 @@ class TestBenchServer:
         try:
             await ws.send_str(json.dumps({
                 'type': 'state',
-                'state': self.pump_state
+                'state': self.pump_state,
+                'targetFlow': self.target_flow
             }))
         except Exception as e:
             log.error(f"Error sending state to client: {e}")

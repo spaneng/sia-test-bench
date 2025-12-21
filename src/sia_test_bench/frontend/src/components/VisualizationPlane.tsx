@@ -30,6 +30,7 @@ export function VisualizationPlane() {
       temperature: point.temperature ?? null,
       voltage: point.voltage ?? null,
       current: point.current ?? null,
+      pumpDutyCycle: point.pumpDutyCycle ?? null,
     }));
   }, [dataHistory]);
 
@@ -56,6 +57,11 @@ export function VisualizationPlane() {
   
   const currentData = useMemo(() => 
     dataHistory.map(point => point.current ?? 0),
+    [dataHistory]
+  );
+  
+  const pumpDutyCycleData = useMemo(() => 
+    dataHistory.map(point => (point.pumpDutyCycle as number) ?? 0),
     [dataHistory]
   );
 
@@ -88,7 +94,7 @@ export function VisualizationPlane() {
           <MiniLiveChart
             label="Flow Rate"
             data={flowRateData}
-            unit="GPM"
+            unit="L/Hr"
             color="#10b981"
             latestValue={latestData?.flowRate}
           />
@@ -112,6 +118,13 @@ export function VisualizationPlane() {
             unit="A"
             color="#ef4444"
             latestValue={latestData?.current}
+          />
+          <MiniLiveChart
+            label="Pump Duty Cycle"
+            data={pumpDutyCycleData}
+            unit="%"
+            color="#06b6d4"
+            latestValue={latestData?.pumpDutyCycle as number | undefined}
           />
         </div>
       </div>

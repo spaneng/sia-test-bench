@@ -35,6 +35,8 @@ export function ControlPlane() {
   const [maxPressureConfirmed, setMaxPressureConfirmed] = useState(false);
   const [maxFlowConfirmed, setMaxFlowConfirmed] = useState(false);
   const [flowAccuracyConfirmed, setFlowAccuracyConfirmed] = useState(false);
+  const [pressureStabilising, setPressureStabilising] = useState(false);
+  const [pressureFailed, setPressureFailed] = useState(false);
   const [maxPressureVerifying, setMaxPressureVerifying] = useState(false);
   const [maxFlowVerifying, setMaxFlowVerifying] = useState(false);
   const [flowAccuracyVerifying, setFlowAccuracyVerifying] = useState(false);
@@ -61,6 +63,40 @@ export function ControlPlane() {
   useEffect(() => {
     fetchAvailablePumps();
   }, [fetchAvailablePumps]);
+
+  // Watch state machine for max pressure stabilization outcomes
+  useEffect(() => {
+    // Track when we're in the stabilisation state
+    if (stateMachineState === 'max_pressure_stabilise') {
+      setPressureStabilising(true);
+    }
+    
+    // Check if we just entered max_pressure_run from max_pressure_stabilise (successful stabilization)
+    if (stateMachineState === 'max_pressure_run' && maxPressureVerifying && pressureStabilising) {
+      setMaxPressureVerifying(false);
+      setMaxPressureVerified(true);
+      setPressureStabilising(false);
+      // After showing green tick for 2 seconds, clear it
+      setTimeout(() => {
+        setMaxPressureVerified(false);
+      }, 2000);
+    }
+    
+    // Check if we went back to max_pressure_start from max_pressure_stabilise (timeout/failed stabilization)
+    if (stateMachineState === 'max_pressure_start' && pressureStabilising) {
+      // Show failure message
+      setMaxPressureVerifying(false);
+      setMaxPressureVerified(false);
+      setPressureFailed(true);
+      setPressureStabilising(false);
+      setIsTestRunning(false);
+      // After showing red X for 2 seconds, reset to Accept button
+      setTimeout(() => {
+        setPressureFailed(false);
+        setMaxPressureConfirmed(false);
+      }, 2000);
+    }
+  }, [stateMachineState, maxPressureVerifying, pressureStabilising]);
 
   // Handle test completion - auto-return to test selection after 3 seconds (only in standalone mode)
   useEffect(() => {
@@ -311,17 +347,13 @@ export function ControlPlane() {
       setMaxPressureConfirmed(true);
       setMaxPressureVerifying(true);
       setIsTestRunning(true);
-      // Send confirmation to backend
-      sendMessage({ type: 'test', command: 'confirm_pressure_test' });
-      // Simulate verification after 4 seconds
-      setTimeout(() => {
-        setMaxPressureVerifying(false);
-        setMaxPressureVerified(true);
-        // After showing green tick for 2 seconds, proceed to test content
-        setTimeout(() => {
-          setMaxPressureVerified(false);
-        }, 2000);
-      }, 4000);
+      // Send confirmation to backend with target pressure
+      sendMessage({ 
+        type: 'test', 
+        command: 'confirm_pressure_test',
+        target_pressure: selectedPump?.maxPressure
+      });
+      // State machine will handle stabilization - no setTimeout needed
     } else if (testToConfirm === 'max_flow') {
       setMaxFlowConfirmed(true);
       setMaxFlowVerifying(true);
@@ -733,7 +765,9 @@ export function ControlPlane() {
                       ) : !maxPressureConfirmed ? (
                         <div className="test-confirmation-section">
                           <p className="confirmation-message">
-                            Please confirm the valves and relief have been set
+                            Please confirm the valves and relief have been set.
+                            <br />
+                            Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -745,12 +779,17 @@ export function ControlPlane() {
                       ) : maxPressureVerifying ? (
                         <div className="test-verification-section">
                           <div className="loading-spinner"></div>
-                          <p className="verification-message">Verifying pressure...</p>
+                          <p className="verification-message">Pressure stabilising...</p>
                         </div>
                       ) : maxPressureVerified ? (
                         <div className="test-verification-section">
                           <div className="success-checkmark">✓</div>
-                          <p className="verification-message">Verifying pressure...</p>
+                          <p className="verification-message">Pressure stabilised</p>
+                        </div>
+                      ) : pressureFailed ? (
+                        <div className="test-verification-section">
+                          <div className="error-cross">✗</div>
+                          <p className="verification-message error">Pressure not reached</p>
                         </div>
                       ) : (
                         <p>Max Pressure Test section content will go here.</p>
@@ -887,7 +926,9 @@ export function ControlPlane() {
                   ) : !maxPressureConfirmed ? (
                     <div className="test-confirmation-section">
                       <p className="confirmation-message">
-                        Please confirm the valves and relief have been set
+                        Please confirm the valves and relief have been set.
+                        <br />
+                        Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -899,12 +940,17 @@ export function ControlPlane() {
                   ) : maxPressureVerifying ? (
                     <div className="test-verification-section">
                       <div className="loading-spinner"></div>
-                      <p className="verification-message">Verifying pressure...</p>
+                      <p className="verification-message">Pressure stabilising...</p>
                     </div>
                   ) : maxPressureVerified ? (
                     <div className="test-verification-section">
                       <div className="success-checkmark">✓</div>
-                      <p className="verification-message">Verifying pressure...</p>
+                      <p className="verification-message">Pressure stabilised</p>
+                    </div>
+                  ) : pressureFailed ? (
+                    <div className="test-verification-section">
+                      <div className="error-cross">✗</div>
+                      <p className="verification-message error">Pressure not reached</p>
                     </div>
                   ) : (
                     <p>Max Pressure Test section content will go here.</p>

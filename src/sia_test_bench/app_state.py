@@ -11,8 +11,9 @@ class SiaTestBenchState:
         {"name": "off", "on_enter": "on_enter_off"},
         {"name": "auto_start"},
         {"name": "auto_stop"},
-        {"name": "max_pressure_start"},
-        {"name": "max_pressure_run", "on_enter": "on_enter_max_pressure_run"},
+        {"name": "max_pressure_start", "on_enter": "stop_pump"},
+        {"name": "max_pressure_stabilise", "timeout": 30, "on_timeout": "init_max_pressure", "on_enter": "start_pump"},
+        {"name": "max_pressure_run", "on_enter": "on_enter_max_pressure_run","on_exit": "stop_pump"},
         {"name": "max_pressure_end"},
         {"name": "max_flow_start"},
         {"name": "max_flow_run", "on_enter": "on_enter_max_flow_run"},
@@ -25,8 +26,9 @@ class SiaTestBenchState:
     transitions = [
         {"trigger": "set_off", "source": "*", "dest": "off"},
         {"trigger": "start_auto", "source": "off", "dest": "auto_start"},
-        {"trigger": "init_max_pressure", "source": ["off","auto_start"], "dest": "max_pressure_start"},
-        {"trigger": "start_max_pressure", "source": "max_pressure_start", "dest": "max_pressure_run"},
+        {"trigger": "init_max_pressure", "source": ["off","auto_start","max_pressure_stabilise"], "dest": "max_pressure_start"},
+        {"trigger": "stabilise_max_pressure", "source": "max_pressure_start", "dest": "max_pressure_stabilise"},
+        {"trigger": "start_max_pressure", "source": "max_pressure_stabilise", "dest": "max_pressure_run"},
         {"trigger": "stop_max_pressure", "source": "max_pressure_run", "dest": "max_pressure_end"},
         {"trigger": "init_max_flow", "source": ["off","auto_start","max_pressure_end"], "dest": "max_flow_start"},
         {"trigger": "start_max_flow", "source": "max_flow_start", "dest": "max_flow_run"},
@@ -102,6 +104,10 @@ class SiaTestBenchState:
                 log.info("Max pressure run ready received - user clicked Accept")
                 # Reset confirmation flag after reading it
                 self.app.shared_pressure_confirmation = False
+                await self.stabilise_max_pressure()
+        elif s == "max_pressure_stabilise":
+            if self.app.check_max_pressure_stabilised():
+                log.info("Max pressure stabilised")
                 await self.start_max_pressure()
         elif s == "max_pressure_run":
             if self.app.check_max_pressure_end_ready():
@@ -171,6 +177,12 @@ class SiaTestBenchState:
         self.app.max_pressure_run_start_time = time.time()
         log.info("Max pressure run started - 30 second timer initiated")
 
+    async def start_pump(self):
+        self.app.start_pump()
+
+    async def stop_pump(self):
+        self.app.stop_pump()
+
     async def on_enter_max_flow_run(self):
         """Set the timer when entering max_flow_run state."""
         import time
@@ -186,4 +198,5 @@ class SiaTestBenchState:
     async def on_enter_off(self):
         """Clean up when entering off state."""
         log.info("Entering off state - resetting test mode and timers")
+        await self.stop_pump()
         self.app.clear_shared_testmode()

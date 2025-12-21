@@ -37,6 +37,8 @@ class SiaTestBenchApplication(Application):
         self.shared_flow_complete_acknowledged: bool = False
         self.shared_flow_accuracy_complete_acknowledged: bool = False
         self.previous_state: str = None
+        self.current_pressure: float = None
+        self.target_max_pressure: float = None
 
     async def setup(self):
         """Initialize the state machine and web server."""
@@ -77,6 +79,9 @@ class SiaTestBenchApplication(Application):
                 
             pulse_rate = 10 #self.get_tag("pulse_rate")
             valve_state = False #self.get_tag("valve_state")
+            
+            # Store current pressure for stabilization checks
+            self.current_pressure = pressure
         except Exception as e:
             log.error(f"Error getting tag values: {e}")
             # Use None values if tags are not available
@@ -88,6 +93,7 @@ class SiaTestBenchApplication(Application):
             pulse_rate = None
             valve_state = None
             pump_state = None
+            self.current_pressure = None
         
         # Create current data object for comparison
         current_data = {
@@ -214,6 +220,19 @@ class SiaTestBenchApplication(Application):
         # Check if frontend has acknowledged the flow accuracy test completion
         return self.shared_flow_accuracy_complete_acknowledged
 
+    def check_max_pressure_stabilised(self):
+        log.info(f"Current pressure: {self.current_pressure}, Target pressure: {self.target_max_pressure}")
+        # Check if current pressure reading meets or exceeds target pressure
+        if self.current_pressure is None or self.target_max_pressure is None:
+            return False
+        return self.current_pressure >= self.target_max_pressure
+
+    def stop_pump(self):
+        self.set_tag("StateControlTag",0)
+
+    def start_pump(self):
+        self.set_tag("StateControlTag",2)
+
     def clear_shared_testmode(self):
         self.shared_testmode = "off"
         # Reset timers when clearing test mode
@@ -228,9 +247,8 @@ class SiaTestBenchApplication(Application):
         self.shared_pressure_complete_acknowledged = False
         self.shared_flow_complete_acknowledged = False
         self.shared_flow_accuracy_complete_acknowledged = False
-        # Reset completion acknowledgment flags
-        self.shared_pressure_complete_acknowledged = False
-        self.shared_flow_complete_acknowledged = False
+        # Reset target pressure
+        self.target_max_pressure = None
 
     async def check_state_changes(self, state: str):
         """Detect state changes and notify frontend of important transitions."""

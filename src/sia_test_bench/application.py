@@ -66,6 +66,11 @@ class SiaTestBenchApplication(Application):
             flow_rate = self.get_tag("value", self.config.flow_sensor_app.value)
             current_draw = self.get_tag("value", self.config.current_draw_app.value)
             pump_duty_cycle = self.get_tag("PumpDutyCycle_ReadOnly", self.config.pump_controller.value)
+            pump_state = self.get_tag("AppState", self.config.pump_controller.value)
+            
+            # Normalize pump_state: convert "auto" to "on" for consistency
+            if pump_state == "auto":
+                pump_state = "on"
             
             if pump_duty_cycle is not None:
                 pump_duty_cycle = round(pump_duty_cycle * 100, 2)
@@ -82,6 +87,7 @@ class SiaTestBenchApplication(Application):
             pump_duty_cycle = None
             pulse_rate = None
             valve_state = None
+            pump_state = None
         
         # Create current data object for comparison
         current_data = {
@@ -92,6 +98,7 @@ class SiaTestBenchApplication(Application):
             'pumpDutyCycle': pump_duty_cycle,
             'pulseRate': pulse_rate,
             'valveState': valve_state,
+            'pumpState': pump_state,
         }
         
         # Check if data has changed from previous reading
@@ -120,6 +127,7 @@ class SiaTestBenchApplication(Application):
                 'pumpDutyCycle': pump_duty_cycle,
                 'pulseRate': pulse_rate,
                 'valveState': valve_state,
+                'pumpState': pump_state,
             }
             
             # Push data to frontend via WebSocket

@@ -8,7 +8,6 @@ export function ControlPlane() {
     availablePumps,
     isLoadingPumps,
     pumpState,
-    isRunning,
     connectionStatus,
     currentTestView,
     stateMachineState,
@@ -1028,7 +1027,15 @@ export function ControlPlane() {
 
       {/* Bottom Section: Manual Control */}
       <div className={`manual-control-section ${isExiting ? 'exiting' : ''}`}>
-        <h3>Manual Control</h3>
+        <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Manual Control</span>
+          <div>
+            <span style={{ marginRight: '0.5rem', color: '#6b7280', fontWeight: 400 }}>Pump:</span>
+            <span style={{ color: getPumpStateColor() }}>
+              {pumpState ? pumpState.toUpperCase() : ''}
+            </span>
+          </div>
+        </h3>
         {isTestInProgress ? (
           <div className="manual-control-disabled">
             <p className="disabled-message">
@@ -1037,19 +1044,6 @@ export function ControlPlane() {
           </div>
         ) : (
           <div className={`manual-control-content ${manualControlExiting ? 'exiting' : ''}`}>
-            <div className="status-card">
-          <div className="status-row">
-            <span>Current State:</span>
-            <span style={{ color: getPumpStateColor() }}>
-              {pumpState.toUpperCase()}
-            </span>
-          </div>
-          <div className="status-row">
-            <span>Running:</span>
-            <span>{isRunning ? 'YES' : 'NO'}</span>
-          </div>
-        </div>
-
         <div className="control-row">
           <div className="button-group button-group-left">
             <button

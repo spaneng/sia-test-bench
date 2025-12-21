@@ -27,7 +27,7 @@ class SiaTestBenchApplication(Application):
         self.server: TestBenchServer = None
         self.previous_data: dict = None
         self.shared_testmode = "off"
-        self.max_pressure_run_start_time: float = None
+        self.max_pressure_stabilise_start_time: float = None
         self.max_flow_run_start_time: float = None
         self.flow_accuracy_run_start_time: float = None
         self.shared_pressure_confirmation: bool = False
@@ -181,11 +181,17 @@ class SiaTestBenchApplication(Application):
             return False
     def check_max_pressure_run_ready(self):
         return self.shared_pressure_confirmation
-    def check_max_pressure_end_ready(self):
-        # Check if test duration has elapsed since entering max_pressure_run
-        if self.max_pressure_run_start_time is None:
+    def check_max_pressure_verified(self):
+        # Check if current pressure reading meets or exceeds target pressure
+        if self.current_pressure is None or self.target_max_pressure is None:
             return False
-        elapsed_time = time.time() - self.max_pressure_run_start_time
+        return self.current_pressure >= self.target_max_pressure
+
+    def check_max_pressure_stabilised(self):
+        # Check if test duration has elapsed since entering max_pressure_stabilise
+        if self.max_pressure_stabilise_start_time is None:
+            return False
+        elapsed_time = time.time() - self.max_pressure_stabilise_start_time
         return elapsed_time >= MAX_PRESSURE_TEST_DURATION
     def check_max_flow_start_ready(self):
         return True
@@ -221,22 +227,31 @@ class SiaTestBenchApplication(Application):
         return self.shared_flow_accuracy_complete_acknowledged
 
     def check_max_pressure_stabilised(self):
+        # Check if test duration has elapsed since entering max_pressure_stabilise
+        if self.max_pressure_stabilise_start_time is None:
+            return False
+        elapsed_time = time.time() - self.max_pressure_stabilise_start_time
+        return elapsed_time >= MAX_PRESSURE_TEST_DURATION
+
+    def check_max_pressure_verified(self):
         log.info(f"Current pressure: {self.current_pressure}, Target pressure: {self.target_max_pressure}")
         # Check if current pressure reading meets or exceeds target pressure
         if self.current_pressure is None or self.target_max_pressure is None:
             return False
         return self.current_pressure >= self.target_max_pressure
 
-    def stop_pump(self):
-        self.set_tag("StateControlTag",0)
+    async def stop_pump(self):
+        log.info("Stopping pump")
+        await self.set_tag("StateControlTag",0, self.config.pump_controller.value)
 
-    def start_pump(self):
-        self.set_tag("StateControlTag",2)
+    async def start_pump(self):
+        log.info("Starting pump")
+        await self.set_tag("StateControlTag",2, self.config.pump_controller.value)
 
     def clear_shared_testmode(self):
         self.shared_testmode = "off"
         # Reset timers when clearing test mode
-        self.max_pressure_run_start_time = None
+        self.max_pressure_stabilise_start_time = None
         self.max_flow_run_start_time = None
         self.flow_accuracy_run_start_time = None
         # Reset confirmation flags
@@ -256,7 +271,7 @@ class SiaTestBenchApplication(Application):
             log.info(f"State changed from {self.previous_state} to {state}")
             
             # Notify frontend when tests complete
-            if state == "max_pressure_end" and self.previous_state == "max_pressure_run":
+            if state == "max_pressure_end" and self.previous_state == "max_pressure_stabilise":
                 await self.server.push_test_complete({
                     'type': 'test_complete',
                     'test': 'max_pressure'
@@ -288,8 +303,8 @@ class SiaTestBenchApplication(Application):
     async def send_test_progress_updates(self, state: str):
         """Send progress updates for currently running tests."""
         
-        if state == "max_pressure_run" and self.max_pressure_run_start_time is not None:
-            elapsed = time.time() - self.max_pressure_run_start_time
+        if state == "max_pressure_stabilise" and self.max_pressure_stabilise_start_time is not None:
+            elapsed = time.time() - self.max_pressure_stabilise_start_time
             progress = min(100.0, (elapsed / MAX_PRESSURE_TEST_DURATION) * 100.0)
             await self.server.push_test_progress({
                 'type': 'test_progress',

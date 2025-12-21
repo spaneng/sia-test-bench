@@ -12,8 +12,10 @@ from .server import TestBenchServer
 log = logging.getLogger()
 
 # Test duration constants (in seconds) - change these to adjust test lengths
-MAX_PRESSURE_TEST_DURATION = 10.0
-MAX_FLOW_TEST_DURATION = 10.0
+MAX_PRESSURE_STABILISE_DURATION = 10.0
+MAX_PRESSURE_RUN_DURATION = 10.0
+MAX_FLOW_STABILISE_DURATION = 10.0
+MAX_FLOW_RUN_DURATION = 10.0
 FLOW_ACCURACY_TEST_DURATION = 10.0
 
 
@@ -28,6 +30,8 @@ class SiaTestBenchApplication(Application):
         self.previous_data: dict = None
         self.shared_testmode = "off"
         self.max_pressure_stabilise_start_time: float = None
+        self.max_pressure_run_start_time: float = None
+        self.max_flow_stabilise_start_time: float = None
         self.max_flow_run_start_time: float = None
         self.flow_accuracy_run_start_time: float = None
         self.shared_pressure_confirmation: bool = False
@@ -39,6 +43,8 @@ class SiaTestBenchApplication(Application):
         self.previous_state: str = None
         self.current_pressure: float = None
         self.target_max_pressure: float = None
+        self.current_flow: float = None
+        self.target_max_flow: float = None
 
     async def setup(self):
         """Initialize the state machine and web server."""
@@ -75,8 +81,9 @@ class SiaTestBenchApplication(Application):
             pulse_rate = 10 #self.get_tag("pulse_rate")
             valve_state = False #self.get_tag("valve_state")
             
-            # Store current pressure for stabilization checks
+            # Store current pressure and flow for verification checks
             self.current_pressure = pressure
+            self.current_flow = flow_rate
         except Exception as e:
             log.error(f"Error getting tag values: {e}")
             # Use None values if tags are not available
@@ -88,6 +95,7 @@ class SiaTestBenchApplication(Application):
             pulse_rate = None
             valve_state = None
             self.current_pressure = None
+            self.current_flow = None
         
         # Create current data object for comparison
         current_data = {
@@ -180,21 +188,44 @@ class SiaTestBenchApplication(Application):
         return self.current_pressure >= self.target_max_pressure
 
     def check_max_pressure_stabilised(self):
-        # Check if test duration has elapsed since entering max_pressure_stabilise
+        # Check if stabilisation duration has elapsed since entering max_pressure_stabilise
         if self.max_pressure_stabilise_start_time is None:
             return False
         elapsed_time = time.time() - self.max_pressure_stabilise_start_time
-        return elapsed_time >= MAX_PRESSURE_TEST_DURATION
+        return elapsed_time >= MAX_PRESSURE_STABILISE_DURATION
+
+    def check_max_pressure_end_ready(self):
+        # Check if test run duration has elapsed since entering max_pressure_run
+        if self.max_pressure_run_start_time is None:
+            return False
+        elapsed_time = time.time() - self.max_pressure_run_start_time
+        return elapsed_time >= MAX_PRESSURE_RUN_DURATION
     def check_max_flow_start_ready(self):
         return True
+    
     def check_max_flow_run_ready(self):
         return self.shared_flow_confirmation
+    
+    def check_max_flow_verified(self):
+        log.info(f"Current pressure: {self.current_pressure}, Target flow pressure (20% of max): {self.target_max_flow}")
+        # Check if current pressure reading meets or exceeds 20% of max pressure
+        if self.current_pressure is None or self.target_max_flow is None:
+            return False
+        return self.current_pressure >= self.target_max_flow
+    
+    def check_max_flow_stabilised(self):
+        # Check if stabilisation duration has elapsed since entering max_flow_stabilise
+        if self.max_flow_stabilise_start_time is None:
+            return False
+        elapsed_time = time.time() - self.max_flow_stabilise_start_time
+        return elapsed_time >= MAX_FLOW_STABILISE_DURATION
+    
     def check_max_flow_end_ready(self):
-        # Check if test duration has elapsed since entering max_flow_run
+        # Check if test run duration has elapsed since entering max_flow_run
         if self.max_flow_run_start_time is None:
             return False
         elapsed_time = time.time() - self.max_flow_run_start_time
-        return elapsed_time >= MAX_FLOW_TEST_DURATION
+        return elapsed_time >= MAX_FLOW_RUN_DURATION
     
     def check_flow_accuracy_run_ready(self):
         return self.shared_flow_accuracy_confirmation
@@ -219,11 +250,11 @@ class SiaTestBenchApplication(Application):
         return self.shared_flow_accuracy_complete_acknowledged
 
     def check_max_pressure_stabilised(self):
-        # Check if test duration has elapsed since entering max_pressure_stabilise
+        # Check if stabilisation duration has elapsed since entering max_pressure_stabilise
         if self.max_pressure_stabilise_start_time is None:
             return False
         elapsed_time = time.time() - self.max_pressure_stabilise_start_time
-        return elapsed_time >= MAX_PRESSURE_TEST_DURATION
+        return elapsed_time >= MAX_PRESSURE_STABILISE_DURATION
 
     def check_max_pressure_verified(self):
         log.info(f"Current pressure: {self.current_pressure}, Target pressure: {self.target_max_pressure}")
@@ -244,6 +275,8 @@ class SiaTestBenchApplication(Application):
         self.shared_testmode = "off"
         # Reset timers when clearing test mode
         self.max_pressure_stabilise_start_time = None
+        self.max_pressure_run_start_time = None
+        self.max_flow_stabilise_start_time = None
         self.max_flow_run_start_time = None
         self.flow_accuracy_run_start_time = None
         # Reset confirmation flags
@@ -254,8 +287,9 @@ class SiaTestBenchApplication(Application):
         self.shared_pressure_complete_acknowledged = False
         self.shared_flow_complete_acknowledged = False
         self.shared_flow_accuracy_complete_acknowledged = False
-        # Reset target pressure
+        # Reset target pressure and flow
         self.target_max_pressure = None
+        self.target_max_flow = None
 
     async def check_state_changes(self, state: str):
         """Detect state changes and notify frontend of important transitions."""
@@ -263,7 +297,7 @@ class SiaTestBenchApplication(Application):
             log.info(f"State changed from {self.previous_state} to {state}")
             
             # Notify frontend when tests complete
-            if state == "max_pressure_end" and self.previous_state == "max_pressure_stabilise":
+            if state == "max_pressure_end" and self.previous_state == "max_pressure_run":
                 await self.server.push_test_complete({
                     'type': 'test_complete',
                     'test': 'max_pressure'
@@ -297,24 +331,46 @@ class SiaTestBenchApplication(Application):
         
         if state == "max_pressure_stabilise" and self.max_pressure_stabilise_start_time is not None:
             elapsed = time.time() - self.max_pressure_stabilise_start_time
-            progress = min(100.0, (elapsed / MAX_PRESSURE_TEST_DURATION) * 100.0)
+            progress = min(100.0, (elapsed / MAX_PRESSURE_STABILISE_DURATION) * 100.0)
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'max_pressure_stabilise',
+                'progress': progress,
+                'elapsed': elapsed,
+                'duration': MAX_PRESSURE_STABILISE_DURATION
+            })
+        
+        elif state == "max_pressure_run" and self.max_pressure_run_start_time is not None:
+            elapsed = time.time() - self.max_pressure_run_start_time
+            progress = min(100.0, (elapsed / MAX_PRESSURE_RUN_DURATION) * 100.0)
             await self.server.push_test_progress({
                 'type': 'test_progress',
                 'test': 'max_pressure',
                 'progress': progress,
                 'elapsed': elapsed,
-                'duration': MAX_PRESSURE_TEST_DURATION
+                'duration': MAX_PRESSURE_RUN_DURATION
+            })
+        
+        elif state == "max_flow_stabilise" and self.max_flow_stabilise_start_time is not None:
+            elapsed = time.time() - self.max_flow_stabilise_start_time
+            progress = min(100.0, (elapsed / MAX_FLOW_STABILISE_DURATION) * 100.0)
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'max_flow_stabilise',
+                'progress': progress,
+                'elapsed': elapsed,
+                'duration': MAX_FLOW_STABILISE_DURATION
             })
         
         elif state == "max_flow_run" and self.max_flow_run_start_time is not None:
             elapsed = time.time() - self.max_flow_run_start_time
-            progress = min(100.0, (elapsed / MAX_FLOW_TEST_DURATION) * 100.0)
+            progress = min(100.0, (elapsed / MAX_FLOW_RUN_DURATION) * 100.0)
             await self.server.push_test_progress({
                 'type': 'test_progress',
                 'test': 'max_flow',
                 'progress': progress,
                 'elapsed': elapsed,
-                'duration': MAX_FLOW_TEST_DURATION
+                'duration': MAX_FLOW_RUN_DURATION
             })
         
         elif state == "flow_accuracy_run" and self.flow_accuracy_run_start_time is not None:

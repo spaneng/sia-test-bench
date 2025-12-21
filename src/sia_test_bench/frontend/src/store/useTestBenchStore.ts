@@ -45,7 +45,9 @@ export interface TestBenchState {
   // Test state
   currentTestView: TestView;
   stateMachineState: string;  // Backend state machine state (e.g., 'off', 'max_pressure_start', 'max_pressure_run', etc.)
+  maxPressureStabiliseProgress: number;
   maxPressureProgress: number;
+  maxFlowStabiliseProgress: number;
   maxFlowProgress: number;
   flowAccuracyProgress: number;
   maxPressureComplete: boolean;
@@ -96,7 +98,9 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   targetFlow: 0,
   currentTestView: 'none',
   stateMachineState: 'off',
+  maxPressureStabiliseProgress: 0,
   maxPressureProgress: 0,
+  maxFlowStabiliseProgress: 0,
   maxFlowProgress: 0,
   flowAccuracyProgress: 0,
   maxPressureComplete: false,
@@ -124,8 +128,12 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   setStateMachineState: (state) => set({ stateMachineState: state }),
   
   setTestProgress: (test, progress) => {
-    if (test === 'max_pressure') {
+    if (test === 'max_pressure_stabilise') {
+      set({ maxPressureStabiliseProgress: progress });
+    } else if (test === 'max_pressure') {
       set({ maxPressureProgress: progress });
+    } else if (test === 'max_flow_stabilise') {
+      set({ maxFlowStabiliseProgress: progress });
     } else if (test === 'max_flow') {
       set({ maxFlowProgress: progress });
     } else if (test === 'flow_accuracy') {
@@ -155,7 +163,9 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   clearData: () => set({ dataHistory: [], latestData: null }),
   
   resetTestProgress: () => set({ 
-    maxPressureProgress: 0, 
+    maxPressureStabiliseProgress: 0,
+    maxPressureProgress: 0,
+    maxFlowStabiliseProgress: 0,
     maxFlowProgress: 0,
     flowAccuracyProgress: 0,
     maxPressureComplete: false,

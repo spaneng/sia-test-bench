@@ -53,6 +53,37 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 1rem;
+  animation: expandIn 0.3s ease-out;
+}
+
+.value-grid.exiting {
+  animation: expandOut 0.3s ease-in forwards;
+}
+
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: top;
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+    transform-origin: top;
+  }
+}
+
+@keyframes expandOut {
+  from {
+    opacity: 1;
+    transform: scaleY(1);
+    transform-origin: top;
+  }
+  to {
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: top;
+  }
 }
 
 .value-card {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 // import {
 //   LineChart,
 //   Line,
@@ -12,10 +12,28 @@ import { useMemo } from 'react';
 import { useTestBenchStore } from '../store/useTestBenchStore';
 import { TestBenchMockup } from './TestBenchMockup';
 import { MiniLiveChart } from './MiniLiveChart';
+import { CombinedLiveChart } from './CombinedLiveChart';
 import './VisualizationPlane.css';
 
 export function VisualizationPlane() {
-  const { dataHistory, latestData } = useTestBenchStore();
+  const { dataHistory, latestData, stateMachineState } = useTestBenchStore();
+  const [showCombined, setShowCombined] = useState(false);
+  const [miniChartsExiting, setMiniChartsExiting] = useState(false);
+
+  // Watch for state machine changes
+  useEffect(() => {
+    if (stateMachineState !== 'off' && !showCombined) {
+      // Trigger mini charts to recede
+      setMiniChartsExiting(true);
+      setTimeout(() => {
+        setShowCombined(true);
+        setMiniChartsExiting(false);
+      }, 300);
+    } else if (stateMachineState === 'off' && showCombined) {
+      // Revert back to mini charts
+      setShowCombined(false);
+    }
+  }, [stateMachineState, showCombined]);
 
   const chartData = useMemo(() => {
     return dataHistory.map((point) => ({
@@ -42,16 +60,6 @@ export function VisualizationPlane() {
   
   const flowRateData = useMemo(() => 
     dataHistory.map(point => point.flowRate ?? 0),
-    [dataHistory]
-  );
-  
-  const temperatureData = useMemo(() => 
-    dataHistory.map(point => point.temperature ?? 0),
-    [dataHistory]
-  );
-  
-  const voltageData = useMemo(() => 
-    dataHistory.map(point => point.voltage ?? 0),
     [dataHistory]
   );
   
@@ -83,50 +91,46 @@ export function VisualizationPlane() {
       {/* Mini Live Charts - Real-time visualizations */}
       <div className="current-values">
         {/* <h3>Live Metrics</h3> */}
-        <div className="value-grid">
-          <MiniLiveChart
-            label="Pressure"
-            data={pressureData}
-            unit="PSI"
-            color="#3b82f6"
-            latestValue={latestData?.pressure}
+        {!showCombined && (
+          <div className={`value-grid ${miniChartsExiting ? 'exiting' : ''}`}>
+            <MiniLiveChart
+              label="Pressure"
+              data={pressureData}
+              unit="PSI"
+              color="#3b82f6"
+              latestValue={latestData?.pressure}
+            />
+            <MiniLiveChart
+              label="Flow Rate"
+              data={flowRateData}
+              unit="L/Hr"
+              color="#10b981"
+              latestValue={latestData?.flowRate}
+            />
+            <MiniLiveChart
+              label="Current"
+              data={currentData}
+              unit="A"
+              color="#ef4444"
+              latestValue={latestData?.current}
+            />
+            <MiniLiveChart
+              label="Pump Duty Cycle"
+              data={pumpDutyCycleData}
+              unit="%"
+              color="#06b6d4"
+              latestValue={latestData?.pumpDutyCycle as number | undefined}
+            />
+          </div>
+        )}
+        {showCombined && (
+          <CombinedLiveChart
+            pressureData={pressureData}
+            flowData={flowRateData}
+            latestPressure={latestData?.pressure}
+            latestFlow={latestData?.flowRate}
           />
-          <MiniLiveChart
-            label="Flow Rate"
-            data={flowRateData}
-            unit="L/Hr"
-            color="#10b981"
-            latestValue={latestData?.flowRate}
-          />
-          <MiniLiveChart
-            label="Temperature"
-            data={temperatureData}
-            unit="°F"
-            color="#f59e0b"
-            latestValue={latestData?.temperature}
-          />
-          <MiniLiveChart
-            label="Voltage"
-            data={voltageData}
-            unit="V"
-            color="#8b5cf6"
-            latestValue={latestData?.voltage}
-          />
-          <MiniLiveChart
-            label="Current"
-            data={currentData}
-            unit="A"
-            color="#ef4444"
-            latestValue={latestData?.current}
-          />
-          <MiniLiveChart
-            label="Pump Duty Cycle"
-            data={pumpDutyCycleData}
-            unit="%"
-            color="#06b6d4"
-            latestValue={latestData?.pumpDutyCycle as number | undefined}
-          />
-        </div>
+        )}
       </div>
 
       <div className="charts-container">

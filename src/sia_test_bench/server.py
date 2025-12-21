@@ -163,7 +163,13 @@ class TestBenchServer:
                         log.info("Pressure test confirmation received (no target pressure specified)")
             elif command == 'confirm_flow_test':
                 # User clicked Accept button for flow test
+                # Calculate 20% of max pressure as target flow
                 if self.application:
+                    target_pressure = data.get('target_pressure')
+                    if target_pressure is not None:
+                        # Use 20% of max pressure value as target flow
+                        self.application.target_max_flow = target_pressure * 0.2
+                        log.info(f"Flow test target set to {self.application.target_max_flow} (20% of {target_pressure})")
                     self.application.shared_flow_confirmation = True
                     log.info("Flow test confirmation received")
             elif command == 'confirm_flow_accuracy_test':

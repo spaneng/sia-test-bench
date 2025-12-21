@@ -13,7 +13,9 @@ export function ControlPlane() {
     currentTestView,
     stateMachineState,
     targetFlow,
+    maxPressureStabiliseProgress,
     maxPressureProgress,
+    maxFlowStabiliseProgress,
     maxFlowProgress,
     flowAccuracyProgress,
     maxPressureComplete,
@@ -38,6 +40,8 @@ export function ControlPlane() {
   const [flowAccuracyConfirmed, setFlowAccuracyConfirmed] = useState(false);
   const [pressureStabilising, setPressureStabilising] = useState(false);
   const [pressureFailed, setPressureFailed] = useState(false);
+  const [flowStabilising, setFlowStabilising] = useState(false);
+  const [flowFailed, setFlowFailed] = useState(false);
   const [maxPressureVerifying, setMaxPressureVerifying] = useState(false);
   const [maxFlowVerifying, setMaxFlowVerifying] = useState(false);
   const [flowAccuracyVerifying, setFlowAccuracyVerifying] = useState(false);
@@ -98,6 +102,40 @@ export function ControlPlane() {
       }, 2000);
     }
   }, [stateMachineState, maxPressureVerifying, pressureStabilising]);
+
+  // Watch state machine for max flow verification/stabilization outcomes
+  useEffect(() => {
+    // Track when we're in the verify state
+    if (stateMachineState === 'max_flow_verify') {
+      setFlowStabilising(true);
+    }
+    
+    // Check if we just entered max_flow_stabilise from max_flow_verify (successful verification)
+    if (stateMachineState === 'max_flow_stabilise' && maxFlowVerifying && flowStabilising) {
+      setMaxFlowVerifying(false);
+      setMaxFlowVerified(true);
+      setFlowStabilising(false);
+      // After showing green tick for 2 seconds, clear it
+      setTimeout(() => {
+        setMaxFlowVerified(false);
+      }, 2000);
+    }
+    
+    // Check if we went back to max_flow_start from max_flow_verify (timeout/failed verification)
+    if (stateMachineState === 'max_flow_start' && flowStabilising) {
+      // Show failure message
+      setMaxFlowVerifying(false);
+      setMaxFlowVerified(false);
+      setFlowFailed(true);
+      setFlowStabilising(false);
+      setIsTestRunning(false);
+      // After showing red X for 2 seconds, reset to Accept button
+      setTimeout(() => {
+        setFlowFailed(false);
+        setMaxFlowConfirmed(false);
+      }, 2000);
+    }
+  }, [stateMachineState, maxFlowVerifying, flowStabilising]);
 
   // Handle test completion - auto-return to test selection after 3 seconds (only in standalone mode)
   useEffect(() => {
@@ -359,17 +397,13 @@ export function ControlPlane() {
       setMaxFlowConfirmed(true);
       setMaxFlowVerifying(true);
       setIsTestRunning(true);
-      // Send confirmation to backend
-      sendMessage({ type: 'test', command: 'confirm_flow_test' });
-      // Simulate verification after 4 seconds
-      setTimeout(() => {
-        setMaxFlowVerifying(false);
-        setMaxFlowVerified(true);
-        // After showing green tick for 2 seconds, proceed to test content
-        setTimeout(() => {
-          setMaxFlowVerified(false);
-        }, 2000);
-      }, 4000);
+      // Send confirmation to backend with target pressure (for calculating 20% as flow target)
+      sendMessage({ 
+        type: 'test', 
+        command: 'confirm_flow_test',
+        target_pressure: selectedPump?.maxPressure
+      });
+      // State machine will handle verification - no setTimeout needed
     } else if (testToConfirm === 'flow_accuracy') {
       setFlowAccuracyConfirmed(true);
       setFlowAccuracyVerifying(true);
@@ -755,13 +789,13 @@ export function ControlPlane() {
             {currentTestView === 'auto' && (
               <>
                 {/* Show Max Pressure Test UI when in max_pressure states */}
-                {(stateMachineState === 'max_pressure_start' || stateMachineState === 'max_pressure_verify' || stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_end') && (
+                {(stateMachineState === 'max_pressure_start' || stateMachineState === 'max_pressure_verify' || stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run' || stateMachineState === 'max_pressure_end') && (
                   <>
                     <div className="test-view" key="auto-max-pressure-view">
                       {maxPressureComplete ? (
                         <div className="test-completion-section">
                           <div className="success-checkmark">✓</div>
-                          <p className="completion-message">Pressure Stabilised</p>
+                          <p className="completion-message">Pressure Test Complete</p>
                         </div>
                       ) : !maxPressureConfirmed ? (
                         <div className="test-confirmation-section">
@@ -792,13 +826,34 @@ export function ControlPlane() {
                           <div className="error-cross">✗</div>
                           <p className="verification-message error">Pressure not reached</p>
                         </div>
-                      ) : (
+                      ) : stateMachineState === 'max_pressure_stabilise' ? (
                         <div className="test-run-section">
                           <p className="test-run-message">Pressure stabilising...</p>
                         </div>
+                      ) : stateMachineState === 'max_pressure_run' ? (
+                        <div className="test-run-section">
+                          <p className="test-run-message">Running test...</p>
+                        </div>
+                      ) : (
+                        <div className="test-run-section">
+                          <p className="test-run-message">Preparing test...</p>
+                        </div>
                       )}
                     </div>
-                    {isTestRunning && maxPressureConfirmed && !maxPressureVerifying && !maxPressureVerified && !pressureFailed && (
+                    {/* Progress bar for stabilise phase */}
+                    {isTestRunning && stateMachineState === 'max_pressure_stabilise' && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${maxPressureStabiliseProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{maxPressureStabiliseProgress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                    {/* Progress bar for run phase */}
+                    {isTestRunning && stateMachineState === 'max_pressure_run' && (
                       <div className="test-progress-container">
                         <div className="test-progress-bar">
                           <div 
@@ -813,18 +868,20 @@ export function ControlPlane() {
                 )}
                 
                 {/* Show Max Flow Test UI when in max_flow states */}
-                {(stateMachineState === 'max_flow_start' || stateMachineState === 'max_flow_run' || stateMachineState === 'max_flow_end') && (
+                {(stateMachineState === 'max_flow_start' || stateMachineState === 'max_flow_verify' || stateMachineState === 'max_flow_stabilise' || stateMachineState === 'max_flow_run' || stateMachineState === 'max_flow_end') && (
                   <>
                     <div className="test-view" key="auto-max-flow-view">
                       {maxFlowComplete ? (
                         <div className="test-completion-section">
                           <div className="success-checkmark">✓</div>
-                          <p className="completion-message">Max Flow Test Complete</p>
+                          <p className="completion-message">Flow Test Complete</p>
                         </div>
                       ) : !maxFlowConfirmed ? (
                         <div className="test-confirmation-section">
                           <p className="confirmation-message">
-                            Please confirm the valves and relief have been set
+                            Please confirm the valves and relief have been set.
+                            <br />
+                            Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -841,13 +898,41 @@ export function ControlPlane() {
                       ) : maxFlowVerified ? (
                         <div className="test-verification-section">
                           <div className="success-checkmark">✓</div>
-                          <p className="verification-message">Verifying flow...</p>
+                          <p className="verification-message">Flow verified</p>
+                        </div>
+                      ) : flowFailed ? (
+                        <div className="test-verification-section">
+                          <div className="error-cross">✗</div>
+                          <p className="verification-message error">Flow not reached</p>
+                        </div>
+                      ) : stateMachineState === 'max_flow_stabilise' ? (
+                        <div className="test-run-section">
+                          <p className="test-run-message">Flow stabilising...</p>
+                        </div>
+                      ) : stateMachineState === 'max_flow_run' ? (
+                        <div className="test-run-section">
+                          <p className="test-run-message">Running test...</p>
                         </div>
                       ) : (
-                        <p>Max Flow Test section content will go here.</p>
+                        <div className="test-run-section">
+                          <p className="test-run-message">Preparing test...</p>
+                        </div>
                       )}
                     </div>
-                    {isTestRunning && maxFlowConfirmed && !maxFlowVerifying && (
+                    {/* Progress bar for stabilise phase */}
+                    {isTestRunning && stateMachineState === 'max_flow_stabilise' && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${maxFlowStabiliseProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{maxFlowStabiliseProgress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                    {/* Progress bar for run phase */}
+                    {isTestRunning && stateMachineState === 'max_flow_run' && (
                       <div className="test-progress-container">
                         <div className="test-progress-bar">
                           <div 
@@ -924,7 +1009,7 @@ export function ControlPlane() {
                   {maxPressureComplete ? (
                     <div className="test-completion-section">
                       <div className="success-checkmark">✓</div>
-                      <p className="completion-message">Pressure Stabilised</p>
+                      <p className="completion-message">Pressure Test Complete</p>
                     </div>
                   ) : !maxPressureConfirmed ? (
                     <div className="test-confirmation-section">
@@ -955,14 +1040,34 @@ export function ControlPlane() {
                       <div className="error-cross">✗</div>
                       <p className="verification-message error">Pressure not reached</p>
                     </div>
-                  ) : (
+                  ) : stateMachineState === 'max_pressure_stabilise' ? (
                     <div className="test-run-section">
                       <p className="test-run-message">Pressure stabilising...</p>
                     </div>
+                  ) : stateMachineState === 'max_pressure_run' ? (
+                    <div className="test-run-section">
+                      <p className="test-run-message">Running test...</p>
+                    </div>
+                  ) : (
+                    <div className="test-run-section">
+                      <p className="test-run-message">Preparing test...</p>
+                    </div>
                   )}
                 </div>
-                {/* Progress bar at bottom of test section */}
-                {isTestRunning && currentTestView === 'max_pressure' && maxPressureConfirmed && !maxPressureVerifying && !maxPressureVerified && !pressureFailed && (
+                {/* Progress bar for stabilise phase */}
+                {isTestRunning && currentTestView === 'max_pressure' && stateMachineState === 'max_pressure_stabilise' && (
+                  <div className="test-progress-container">
+                    <div className="test-progress-bar">
+                      <div 
+                        className="test-progress-fill" 
+                        style={{ width: `${maxPressureStabiliseProgress}%` }}
+                      ></div>
+                    </div>
+                    <p className="test-progress-text">{maxPressureStabiliseProgress.toFixed(1)}%</p>
+                  </div>
+                )}
+                {/* Progress bar for run phase */}
+                {isTestRunning && currentTestView === 'max_pressure' && stateMachineState === 'max_pressure_run' && (
                   <div className="test-progress-container">
                     <div className="test-progress-bar">
                       <div 
@@ -981,12 +1086,14 @@ export function ControlPlane() {
                   {maxFlowComplete ? (
                     <div className="test-completion-section">
                       <div className="success-checkmark">✓</div>
-                      <p className="completion-message">Max Flow Test Complete</p>
+                      <p className="completion-message">Flow Test Complete</p>
                     </div>
                   ) : !maxFlowConfirmed ? (
                     <div className="test-confirmation-section">
                       <p className="confirmation-message">
-                        Please confirm the valves and relief have been set
+                        Please confirm the valves and relief have been set.
+                        <br />
+                        Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -1003,14 +1110,41 @@ export function ControlPlane() {
                   ) : maxFlowVerified ? (
                     <div className="test-verification-section">
                       <div className="success-checkmark">✓</div>
-                      <p className="verification-message">Verifying flow...</p>
+                      <p className="verification-message">Flow verified</p>
+                    </div>
+                  ) : flowFailed ? (
+                    <div className="test-verification-section">
+                      <div className="error-cross">✗</div>
+                      <p className="verification-message error">Flow not reached</p>
+                    </div>
+                  ) : stateMachineState === 'max_flow_stabilise' ? (
+                    <div className="test-run-section">
+                      <p className="test-run-message">Flow stabilising...</p>
+                    </div>
+                  ) : stateMachineState === 'max_flow_run' ? (
+                    <div className="test-run-section">
+                      <p className="test-run-message">Running test...</p>
                     </div>
                   ) : (
-                    <p>Max Flow Test section content will go here.</p>
+                    <div className="test-run-section">
+                      <p className="test-run-message">Preparing test...</p>
+                    </div>
                   )}
                 </div>
-                {/* Progress bar at bottom of test section */}
-                {isTestRunning && currentTestView === 'max_flow' && maxFlowConfirmed && !maxFlowVerifying && (
+                {/* Progress bar for stabilise phase */}
+                {isTestRunning && currentTestView === 'max_flow' && stateMachineState === 'max_flow_stabilise' && (
+                  <div className="test-progress-container">
+                    <div className="test-progress-bar">
+                      <div 
+                        className="test-progress-fill" 
+                        style={{ width: `${maxFlowStabiliseProgress}%` }}
+                      ></div>
+                    </div>
+                    <p className="test-progress-text">{maxFlowStabiliseProgress.toFixed(1)}%</p>
+                  </div>
+                )}
+                {/* Progress bar for run phase */}
+                {isTestRunning && currentTestView === 'max_flow' && stateMachineState === 'max_flow_run' && (
                   <div className="test-progress-container">
                     <div className="test-progress-bar">
                       <div 

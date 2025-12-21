@@ -1,0 +1,81 @@
+.combined-live-chart {
+  background: white;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  animation: expandIn 0.3s ease-out;
+}
+
+.combined-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0 0.5rem;
+}
+
+.combined-chart-header .live-value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.combined-chart-header .live-value.pressure {
+  color: #3b82f6;
+}
+
+.combined-chart-header .live-value.flow {
+  color: #10b981;
+}
+
+.combined-chart-header .value-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.combined-chart-header .value-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.combined-chart-header .value-unit {
+  font-size: 0.875rem;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.combined-chart-container {
+  width: 100%;
+  height: 300px;
+}
+
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: top;
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+    transform-origin: top;
+  }
+}
+
+.combined-live-chart.exiting {
+  animation: expandOut 0.3s ease-in forwards;
+}
+
+@keyframes expandOut {
+  from {
+    opacity: 1;
+    transform: scaleY(1);
+    transform-origin: top;
+  }
+  to {
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: top;
+  }
+}
+

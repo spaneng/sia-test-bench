@@ -39,6 +39,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ## SECOND STAGE ##
 FROM base_image AS final_image
 
+# Install WeasyPrint system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 \
+    libharfbuzz0b \
+    libpangoft2-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf2.0-0 \
+    libglib2.0-0 \
+    shared-mime-info \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder --chown=app:app /app /app
 ENV PATH="/app/.venv/bin:$PATH"
 CMD ["doover-app-run"]

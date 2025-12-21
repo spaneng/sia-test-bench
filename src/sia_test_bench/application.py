@@ -249,20 +249,6 @@ class SiaTestBenchApplication(Application):
         # Check if frontend has acknowledged the flow accuracy test completion
         return self.shared_flow_accuracy_complete_acknowledged
 
-    def check_max_pressure_stabilised(self):
-        # Check if stabilisation duration has elapsed since entering max_pressure_stabilise
-        if self.max_pressure_stabilise_start_time is None:
-            return False
-        elapsed_time = time.time() - self.max_pressure_stabilise_start_time
-        return elapsed_time >= MAX_PRESSURE_STABILISE_DURATION
-
-    def check_max_pressure_verified(self):
-        log.info(f"Current pressure: {self.current_pressure}, Target pressure: {self.target_max_pressure}")
-        # Check if current pressure reading meets or exceeds target pressure
-        if self.current_pressure is None or self.target_max_pressure is None:
-            return False
-        return self.current_pressure >= self.target_max_pressure
-
     async def stop_pump(self):
         log.info("Stopping pump")
         await self.set_tag("StateControlTag",0, self.config.pump_controller.value)

@@ -58,6 +58,12 @@ export interface TestBenchState {
   dataHistory: PumpData[];
   latestData: PumpData | null;
   
+  // Report generation state
+  isLoadingReport: boolean;
+  reportError: string | null;
+  reportUrl: string | null;
+  currentTestId: string | null;
+  
   // Actions
   setConnectionStatus: (status: TestBenchState['connectionStatus']) => void;
   setPumpState: (state: TestBenchState['pumpState']) => void;
@@ -80,6 +86,10 @@ export interface TestBenchState {
   stopPump: () => Promise<void>;
   setWarningDisabled: () => Promise<void>;
   setWarningEnabled: () => Promise<void>;
+  
+  // Report generation
+  finalizeTestAndGenerateReport: (testId: string) => Promise<void>;
+  clearReportState: () => void;
 }
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8092';
@@ -108,6 +118,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   flowAccuracyComplete: false,
   dataHistory: [],
   latestData: null,
+  isLoadingReport: false,
+  reportError: null,
+  reportUrl: null,
+  currentTestId: null,
   
   // Setters
   setConnectionStatus: (status) => set({ 
@@ -314,5 +328,110 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       set({ pumpState: 'off' });
     }
   },
+  
+  // Report generation
+  finalizeTestAndGenerateReport: async (testId: string) => {
+    const state = get();
+    const { selectedPump, dataHistory } = state;
+    
+    if (!selectedPump) {
+      set({ reportError: 'No pump selected' });
+      return;
+    }
+    
+    if (!dataHistory || dataHistory.length === 0) {
+      set({ reportError: 'No test data available' });
+      return;
+    }
+    
+    // Set loading state
+    set({ isLoadingReport: true, reportError: null, reportUrl: null, currentTestId: testId });
+    
+    try {
+      // Extract timestamps and determine start/end
+      const timestamps = dataHistory.map(d => d.timestamp).filter((ts): ts is number => ts !== undefined);
+      if (timestamps.length === 0) {
+        throw new Error('No valid timestamps in test data');
+      }
+      
+      const startTimestamp = Math.min(...timestamps);
+      const endTimestamp = Math.max(...timestamps);
+      
+      // Prepare series data - convert timestamps from milliseconds to seconds if needed
+      // Check if timestamps are in milliseconds (greater than year 2000 timestamp in milliseconds)
+      const isMilliseconds = startTimestamp > 946684800000; // Year 2000 in milliseconds (Unix: 946684800 seconds)
+      const series = dataHistory.map(data => ({
+        timestamp: isMilliseconds ? data.timestamp / 1000 : data.timestamp,
+        pressure: data.pressure,
+        flowRate: data.flowRate,
+        // Include other fields if present
+        tankLevel: data.tankLevel,
+        currentDraw: data.currentDraw,
+        pulseRate: data.pulseRate,
+        temperature: data.temperature,
+        voltage: data.voltage,
+        current: data.current,
+      }));
+      
+      // Prepare metadata
+      const metadata = {
+        pump_serial: selectedPump.id, // Use ID as serial placeholder
+        pump_model: selectedPump.model || selectedPump.name,
+        operator: '', // Placeholder - can be enhanced later
+        site: '', // Placeholder - can be enhanced later
+        start_timestamp: isMilliseconds ? startTimestamp / 1000 : startTimestamp,
+        end_timestamp: isMilliseconds ? endTimestamp / 1000 : endTimestamp,
+        pump_name: selectedPump.name,
+      };
+      
+      // POST to finalize endpoint
+      const response = await fetch(`${API_URL}/api/tests/${testId}/finalize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          series,
+          metadata,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        // Store the full URL (relative path from API response)
+        const fullReportUrl = result.report_url.startsWith('http') 
+          ? result.report_url 
+          : `${API_URL}${result.report_url}`;
+        
+        set({ 
+          isLoadingReport: false, 
+          reportUrl: fullReportUrl,
+          reportError: null,
+        });
+      } else {
+        throw new Error(result.error || 'Report generation failed');
+      }
+    } catch (error) {
+      console.error('Error finalizing test:', error);
+      set({ 
+        isLoadingReport: false, 
+        reportError: error instanceof Error ? error.message : 'Failed to generate report',
+        reportUrl: null,
+      });
+    }
+  },
+  
+  clearReportState: () => set({ 
+    isLoadingReport: false, 
+    reportError: null, 
+    reportUrl: null, 
+    currentTestId: null 
+  }),
 }));
 

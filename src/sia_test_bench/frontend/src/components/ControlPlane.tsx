@@ -21,6 +21,9 @@ export function ControlPlane() {
     maxPressureComplete,
     maxFlowComplete,
     flowAccuracyComplete,
+    isLoadingReport,
+    reportError,
+    reportUrl,
     startPump,
     stopPump,
     setSelectedPump,
@@ -29,6 +32,8 @@ export function ControlPlane() {
     resetTestProgress,
     fetchAvailablePumps,
     sendMessage,
+    finalizeTestAndGenerateReport,
+    clearReportState,
   } = useTestBenchStore();
 
   const [isExiting, setIsExiting] = useState(false);
@@ -322,6 +327,8 @@ export function ControlPlane() {
     
     // Reset progress when starting a new test
     resetTestProgress();
+    // Clear report state when starting a new test
+    clearReportState();
     
     if (currentTestView === 'none') {
       // First time selecting a test - exit header and buttons
@@ -371,6 +378,8 @@ export function ControlPlane() {
     setIsTestRunning(false);
     // Reset progress bars
     resetTestProgress();
+    // Clear report state
+    clearReportState();
   };
 
   const handleConfirmValves = () => {
@@ -460,6 +469,78 @@ export function ControlPlane() {
       ...editablePumpData,
       [field]: value === '' ? undefined : (typeof value === 'string' && field !== 'name' && field !== 'model' ? parseFloat(value) || undefined : value),
     });
+  };
+
+  // Generate a test ID based on current timestamp and test type
+  const generateTestId = (testType: string): string => {
+    const timestamp = Date.now();
+    const testPrefix = testType.replace('_', '-');
+    return `${testPrefix}-${timestamp}`;
+  };
+
+  // Handle report generation
+  const handleGenerateReport = async (testType: string) => {
+    const testId = generateTestId(testType);
+    await finalizeTestAndGenerateReport(testId);
+  };
+
+  // Render report generation UI
+  const renderReportGenerationUI = (testType: string) => {
+    if (isLoadingReport) {
+      return (
+        <div className="report-generation-section">
+          <div className="loading-spinner"></div>
+          <p className="report-message">Generating report...</p>
+        </div>
+      );
+    }
+
+    if (reportError) {
+      return (
+        <div className="report-generation-section">
+          <div className="error-cross">✗</div>
+          <p className="report-message error">{reportError}</p>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              clearReportState();
+              handleGenerateReport(testType);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    if (reportUrl) {
+      return (
+        <div className="report-generation-section">
+          <div className="success-checkmark">✓</div>
+          <p className="report-message">Report generated successfully</p>
+          <a
+            href={reportUrl}
+            download
+            className="btn btn-primary"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Download Report
+          </a>
+        </div>
+      );
+    }
+
+    return (
+      <div className="report-generation-section">
+        <button
+          className="btn btn-primary"
+          onClick={() => handleGenerateReport(testType)}
+        >
+          Generate Report
+        </button>
+      </div>
+    );
   };
 
   // Page 1: Pump Selection
@@ -796,6 +877,7 @@ export function ControlPlane() {
                         <div className="test-completion-section">
                           <div className="success-checkmark">✓</div>
                           <p className="completion-message">Pressure Test Complete</p>
+                          {renderReportGenerationUI('max_pressure')}
                         </div>
                       ) : !maxPressureConfirmed ? (
                         <div className="test-confirmation-section">
@@ -875,6 +957,7 @@ export function ControlPlane() {
                         <div className="test-completion-section">
                           <div className="success-checkmark">✓</div>
                           <p className="completion-message">Flow Test Complete</p>
+                          {renderReportGenerationUI('max_flow')}
                         </div>
                       ) : !maxFlowConfirmed ? (
                         <div className="test-confirmation-section">
@@ -954,6 +1037,7 @@ export function ControlPlane() {
                         <div className="test-completion-section">
                           <div className="success-checkmark">✓</div>
                           <p className="completion-message">Flow Accuracy Test Complete</p>
+                          {renderReportGenerationUI('flow_accuracy')}
                         </div>
                       ) : !flowAccuracyConfirmed ? (
                         <div className="test-confirmation-section">
@@ -1010,6 +1094,7 @@ export function ControlPlane() {
                     <div className="test-completion-section">
                       <div className="success-checkmark">✓</div>
                       <p className="completion-message">Pressure Test Complete</p>
+                      {renderReportGenerationUI('max_pressure')}
                     </div>
                   ) : !maxPressureConfirmed ? (
                     <div className="test-confirmation-section">
@@ -1087,6 +1172,7 @@ export function ControlPlane() {
                     <div className="test-completion-section">
                       <div className="success-checkmark">✓</div>
                       <p className="completion-message">Flow Test Complete</p>
+                      {renderReportGenerationUI('max_flow')}
                     </div>
                   ) : !maxFlowConfirmed ? (
                     <div className="test-confirmation-section">
@@ -1165,6 +1251,7 @@ export function ControlPlane() {
                     <div className="test-completion-section">
                       <div className="success-checkmark">✓</div>
                       <p className="completion-message">Flow Accuracy Test Complete</p>
+                      {renderReportGenerationUI('flow_accuracy')}
                     </div>
                   ) : !flowAccuracyConfirmed ? (
                     <div className="test-confirmation-section">

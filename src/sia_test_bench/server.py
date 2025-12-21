@@ -2,8 +2,9 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
-from typing import Set
+from typing import Set, Optional
 
 import aiohttp
 from aiohttp import web
@@ -11,6 +12,9 @@ from aiohttp.web_runner import AppRunner, TCPSite
 
 # Use absolute import so this can be run as a script
 from sia_test_bench.app_state import SiaTestBenchState
+from sia_test_bench.test_persistence import TestPersistence
+from sia_test_bench.test_validation import validate_test_data, compute_test_metrics
+from sia_test_bench.test_reports import render_test_chart_png, generate_report_pdf
 
 log = logging.getLogger()
 
@@ -28,6 +32,7 @@ class TestBenchServer:
         self.pump_state: str = 'warning_disabled'
         self.is_running: bool = False
         self.target_flow: float = 0.0
+        self.test_persistence = TestPersistence()
 
     async def setup(self):
         """Initialize the web server."""
@@ -39,6 +44,8 @@ class TestBenchServer:
         self.app.router.add_get('/api/pumps', self.get_pumps_handler)
         self.app.router.add_post('/api/pump/start', self.start_pump_handler)
         self.app.router.add_post('/api/pump/stop', self.stop_pump_handler)
+        self.app.router.add_post('/api/tests/{test_id}/finalize', self.finalize_test_handler)
+        self.app.router.add_get('/api/tests/{test_id}/report.pdf', self.get_report_pdf_handler)
         
         # Serve static files from frontend dist directory
         frontend_dist = Path(__file__).parent / 'frontend' / 'dist'
@@ -329,6 +336,228 @@ class TestBenchServer:
         """Handle POST /api/pump/stop - stop the pump."""
         await self.stop_pump()
         return web.json_response({'status': 'success', 'state': self.pump_state})
+
+    async def finalize_test_handler(self, request: web.Request) -> web.Response:
+        """Handle POST /api/tests/{test_id}/finalize - finalize a test and generate report.
+        
+        Expected payload:
+        {
+            "series": [
+                {"timestamp": 1234567890.0, "pressure": 10.5, "flowRate": 5.2, ...},
+                ...
+            ],
+            "metadata": { ... }  # optional
+        }
+        
+        Returns:
+        {
+            "status": "success",
+            "test_id": "...",
+            "report_url": "/api/tests/{test_id}/report.pdf",
+            "metrics": { ... }
+        }
+        """
+        test_id = request.match_info.get('test_id')
+        if not test_id:
+            return web.json_response(
+                {'error': 'test_id is required'}, 
+                status=400
+            )
+        
+        # IDEMPOTENCY CHECK: Check if test already finalized (early return before expensive operations)
+        existing_record = self.test_persistence.load_test_record(test_id)
+        if existing_record is not None:
+            # Test already finalized, return existing report info
+            log.info(f"Test {test_id} already finalized, returning existing record")
+            metrics = existing_record.get("metrics", {})
+            return web.json_response({
+                'status': 'success',
+                'test_id': test_id,
+                'report_url': f'/api/tests/{test_id}/report.pdf',
+                'metrics': metrics,
+                'already_finalized': True
+            })
+        
+        # Acquire lock to prevent race conditions during finalization
+        lock_file = self.test_persistence.acquire_finalization_lock(test_id)
+        if lock_file is None:
+            # Lock already held - test may be currently finalizing by another request
+            # Check again if it completed while we were waiting
+            existing_record = self.test_persistence.load_test_record(test_id)
+            if existing_record is not None:
+                metrics = existing_record.get("metrics", {})
+                return web.json_response({
+                    'status': 'success',
+                    'test_id': test_id,
+                    'report_url': f'/api/tests/{test_id}/report.pdf',
+                    'metrics': metrics,
+                    'already_finalized': True
+                })
+            return web.json_response(
+                {'error': 'Test is currently being finalized by another request'}, 
+                status=409  # Conflict
+            )
+        
+        try:
+            # Parse request body
+            try:
+                payload = await request.json()
+            except json.JSONDecodeError as e:
+                log.exception(f"Invalid JSON in finalize_test request: {e}")
+                return web.json_response(
+                    {'error': 'Invalid JSON in request body'}, 
+                    status=400
+                )
+            
+            # Validate payload
+            try:
+                validate_test_data(payload)
+            except ValueError as e:
+                log.exception(f"Validation error for test {test_id}: {e}")
+                return web.json_response(
+                    {'error': f'Validation failed: {str(e)}'}, 
+                    status=400
+                )
+            
+            # Extract series and metadata
+            series = payload["series"]
+            metadata = payload.get("metadata", {})
+            
+            # Compute metrics
+            try:
+                metrics = compute_test_metrics(series)
+            except Exception as e:
+                log.exception(f"Error computing metrics for test {test_id}: {e}")
+                return web.json_response(
+                    {'error': f'Failed to compute metrics: {str(e)}'}, 
+                    status=500
+                )
+            
+            # Generate chart PNG asynchronously with timeout
+            try:
+                chart_png_bytes = await asyncio.wait_for(
+                    asyncio.to_thread(render_test_chart_png, series),
+                    timeout=60.0  # 60 second timeout for chart generation
+                )
+            except asyncio.TimeoutError:
+                log.error(f"Chart generation timeout for test {test_id}")
+                return web.json_response(
+                    {'error': 'Chart generation timed out'}, 
+                    status=504  # Gateway Timeout
+                )
+            except Exception as e:
+                log.exception(f"Error generating chart for test {test_id}: {e}")
+                return web.json_response(
+                    {'error': f'Failed to generate chart: {str(e)}'}, 
+                    status=500
+                )
+            
+            # Create test record
+            test_record = {
+                'test_id': test_id,
+                'metadata': metadata,
+                'series': series,
+                'metrics': metrics,
+                'generated_at': f"{datetime.utcnow().isoformat()}Z",
+            }
+            
+            # Generate PDF report asynchronously with timeout
+            try:
+                pdf_bytes = await asyncio.wait_for(
+                    asyncio.to_thread(generate_report_pdf, test_record, chart_png_bytes),
+                    timeout=120.0  # 120 second timeout for PDF generation
+                )
+            except asyncio.TimeoutError:
+                log.error(f"PDF generation timeout for test {test_id}")
+                return web.json_response(
+                    {'error': 'PDF generation timed out'}, 
+                    status=504  # Gateway Timeout
+                )
+            except Exception as e:
+                log.exception(f"Error generating PDF for test {test_id}: {e}")
+                return web.json_response(
+                    {'error': f'Failed to generate PDF: {str(e)}'}, 
+                    status=500
+                )
+            
+            # Save test record and PDF atomically (with rollback on failure)
+            try:
+                self.test_persistence.save_test_record_and_pdf_atomic(
+                    test_id, test_record, pdf_bytes
+                )
+            except Exception as e:
+                log.exception(f"Error saving test record/PDF for {test_id}: {e}")
+                return web.json_response(
+                    {'error': f'Failed to save test data: {str(e)}'}, 
+                    status=500
+                )
+            
+            log.info(f"Successfully finalized test {test_id}")
+            
+            # Return success response
+            return web.json_response({
+                'status': 'success',
+                'test_id': test_id,
+                'report_url': f'/api/tests/{test_id}/report.pdf',
+                'metrics': metrics
+            })
+            
+        except Exception as e:
+            log.exception(f"Unexpected error finalizing test {test_id}: {e}")
+            return web.json_response(
+                {'error': 'Internal server error'}, 
+                status=500
+            )
+        finally:
+            # Release lock
+            if lock_file is not None:
+                try:
+                    lock_path = self.test_persistence.get_lock_path(test_id)
+                    lock_file.close()
+                    if lock_path.exists():
+                        lock_path.unlink()
+                except Exception as e:
+                    log.warning(f"Error releasing lock for test {test_id}: {e}")
+
+    async def get_report_pdf_handler(self, request: web.Request) -> web.Response:
+        """Handle GET /api/tests/{test_id}/report.pdf - stream PDF report.
+        
+        Returns:
+            PDF file stream, or 404 if not found
+        """
+        test_id = request.match_info.get('test_id')
+        if not test_id:
+            return web.json_response(
+                {'error': 'test_id is required'}, 
+                status=400
+            )
+        
+        try:
+            # Load PDF from disk
+            pdf_bytes = self.test_persistence.load_report_pdf(test_id)
+            
+            if pdf_bytes is None:
+                log.warning(f"Report PDF not found for test {test_id}")
+                return web.json_response(
+                    {'error': 'Report not found'}, 
+                    status=404
+                )
+            
+            # Stream PDF response
+            return web.Response(
+                body=pdf_bytes,
+                content_type='application/pdf',
+                headers={
+                    'Content-Disposition': f'inline; filename="test_report_{test_id}.pdf"'
+                }
+            )
+            
+        except Exception as e:
+            log.exception(f"Error retrieving PDF report for {test_id}: {e}")
+            return web.json_response(
+                {'error': 'Internal server error'}, 
+                status=500
+            )
 
     async def start_pump(self):
         """Start the pump."""

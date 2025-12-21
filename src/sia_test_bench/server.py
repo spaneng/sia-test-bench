@@ -15,6 +15,24 @@ from sia_test_bench.app_state import SiaTestBenchState
 log = logging.getLogger()
 
 
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    """CORS middleware to allow cross-origin requests."""
+    # Handle preflight OPTIONS requests
+    if request.method == 'OPTIONS':
+        response = web.Response()
+    else:
+        response = await handler(request)
+    
+    # Add CORS headers to all responses
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    
+    return response
+
+
 class TestBenchServer:
     """Web server for the SIA Test Bench application."""
     
@@ -31,14 +49,17 @@ class TestBenchServer:
 
     async def setup(self):
         """Initialize the web server."""
-        # Create aiohttp application
-        self.app = web.Application()
+        # Create aiohttp application with CORS middleware
+        self.app = web.Application(middlewares=[cors_middleware])
         
         # Setup API routes first
         self.app.router.add_get('/ws', self.websocket_handler)
         self.app.router.add_get('/api/pumps', self.get_pumps_handler)
         self.app.router.add_post('/api/pump/start', self.start_pump_handler)
         self.app.router.add_post('/api/pump/stop', self.stop_pump_handler)
+        # Add OPTIONS handler for CORS preflight
+        self.app.router.add_options('/api/pump/start', self.options_handler)
+        self.app.router.add_options('/api/pump/stop', self.options_handler)
         
         # Serve static files from frontend dist directory
         frontend_dist = Path(__file__).parent / 'frontend' / 'dist'
@@ -196,6 +217,19 @@ class TestBenchServer:
                     log.info("Test cancelled, mode set to: off")
             else:
                 log.debug(f"Unknown test command: {command}")
+        elif message_type == 'pump':
+            # Handle pump-related commands
+            command = data.get('command')
+            if command == 'set_pump_params':
+                # Save pump parameters from UI form
+                params = data.get('params', {})
+                if self.application:
+                    await self.application.set_ui_pump_params(params)
+                    log.info(f"Pump parameters saved: {params}")
+                else:
+                    log.warning("Application reference not set, cannot save pump parameters")
+            else:
+                log.debug(f"Unknown pump command: {command}")
         elif message_type == 'get_state':
             # Send current state
             await self.send_state_to_client(ws)
@@ -283,36 +317,90 @@ class TestBenchServer:
         pumps = [
             {
                 'id': '1',
-                'name': 'SIA Pump Model A',
-                'model': 'Model A',
-                'maxRPM': 3000,
-                'maxFlowRate': 50,
-                'maxPressure': 100,
-                'currentDraw': 5.5,
-                'strokeLength': 2.5
+                'name': 'SIA L15 1/8"',
+                'model': 'L15 1/8"',
+                'maxRPM': 80,
+                'maxFlowRate': 0.96,
+                'maxPressure': 1200,
+                'currentDraw': 1,
+                'strokeLength': 1.5
             },
             {
                 'id': '2',
-                'name': 'SIA Pump Model B',
-                'model': 'Model B',
-                'maxRPM': 3500,
-                'maxFlowRate': 75,
-                'maxPressure': 120,
-                'currentDraw': 7.2,
-                'strokeLength': 3.0
+                'name': 'SIA L25 1/4"',
+                'model': 'L25 1/4"',
+                'maxRPM': 80,
+                'maxFlowRate': 3.84,
+                'maxPressure': 1200,
+                'currentDraw': 2.5,
+                'strokeLength': 1.5
             },
             {
                 'id': '3',
-                'name': 'SIA Pump Model C',
-                'model': 'Model C',
-                'maxRPM': 4000,
-                'maxFlowRate': 100,
-                'maxPressure': 150,
-                'currentDraw': 9.5,
-                'strokeLength': 3.5
+                'name': 'SIA L35 3/8"',
+                'model': 'L35 3/8"',
+                'maxRPM': 80,
+                'maxFlowRate': 8.64,
+                'maxPressure': 1200,
+                'currentDraw': 3.5,
+                'strokeLength': 1.5
+            },
+            {
+                'id': '4',
+                'name': 'SIA L50 1/2"',
+                'model': 'L50 1/2"',
+                'maxRPM': 80,
+                'maxFlowRate': 15.36,
+                'maxPressure': 1200,
+                'currentDraw': 4.5,
+                'strokeLength': 1.5
+            },
+            {
+                'id': '5',
+                'name': 'SIA L75 3/4"',
+                'model': 'L75 3/4"',
+                'maxRPM': 80,
+                'maxFlowRate': 34.56,
+                'maxPressure': 1200,
+                'currentDraw': 7.5,
+                'strokeLength': 1.5
+            },
+            {
+                'id': '6',
+                'name': 'SIA L100 1"',
+                'model': 'L100 1"',
+                'maxRPM': 80,
+                'maxFlowRate': 61.44,
+                'maxPressure': 1200,
+                'currentDraw': 10.5,
+                'strokeLength': 1.5
+            },
+            {
+                'id': '7',
+                'name': 'SIA L150 1 1/2"',
+                'model': 'L150 1 1/2"',
+                'maxRPM': 80,
+                'maxFlowRate': 136.8,
+                'maxPressure': 1200,
+                'currentDraw': 15.5,
+                'strokeLength': 1.5
+            },
+            {
+                'id': '8',
+                'name': 'SIA L225 2 1/4"',
+                'model': 'L225 2 1/4"',
+                'maxRPM': 80,
+                'maxFlowRate': 312,
+                'maxPressure': 1200,
+                'currentDraw': 20.5,
+                'strokeLength': 1.5
             },
         ]
         return web.json_response(pumps)
+
+    async def options_handler(self, request: web.Request) -> web.Response:
+        """Handle OPTIONS requests for CORS preflight."""
+        return web.Response()
 
     async def start_pump_handler(self, request: web.Request) -> web.Response:
         """Handle POST /api/pump/start - start the pump."""
@@ -326,6 +414,13 @@ class TestBenchServer:
 
     async def start_pump(self):
         """Start the pump."""
+        if self.application:
+            try:
+                await self.application.start_pump()
+            except Exception as e:
+                log.error(f"Error calling application.start_pump(): {e}", exc_info=True)
+        else:
+            log.warning("Application reference not set, cannot start pump")
         if self.pump_state != 'on':
             self.pump_state = 'on'
             self.is_running = True
@@ -334,6 +429,13 @@ class TestBenchServer:
 
     async def stop_pump(self):
         """Stop the pump."""
+        if self.application:
+            try:
+                await self.application.stop_pump()
+            except Exception as e:
+                log.error(f"Error calling application.stop_pump(): {e}", exc_info=True)
+        else:
+            log.warning("Application reference not set, cannot stop pump")
         if self.pump_state != 'off':
             self.pump_state = 'off'
             self.is_running = False

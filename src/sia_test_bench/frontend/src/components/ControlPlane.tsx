@@ -413,6 +413,22 @@ export function ControlPlane() {
         ...editablePumpData,
       };
       setSelectedPump(updatedPump);
+      
+      // Send pump parameters to server
+      const params = {
+        name: editablePumpData.name,
+        model: editablePumpData.model,
+        max_rpm: editablePumpData.maxRPM,
+        max_flow_rate: editablePumpData.maxFlowRate,
+        max_pressure: editablePumpData.maxPressure,
+        current_draw: editablePumpData.currentDraw,
+        stroke_length: editablePumpData.strokeLength,
+      };
+      sendMessage({ 
+        type: 'pump', 
+        command: 'set_pump_params', 
+        params 
+      });
     }
     // Set showPumpInfoView to false - the ref will prevent useEffect from resetting it
     setShowPumpInfoView(false);

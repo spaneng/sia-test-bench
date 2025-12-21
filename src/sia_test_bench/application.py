@@ -8,6 +8,7 @@ from pydoover.docker import Application
 from .app_config import SiaTestBenchConfig
 from .app_state import SiaTestBenchState
 from .server import TestBenchServer
+from .utils import PumpType
 
 log = logging.getLogger()
 
@@ -42,9 +43,21 @@ class SiaTestBenchApplication(Application):
 
     async def setup(self):
         """Initialize the state machine and web server."""
+        deployment_config = await self.get_channel_aggregate("deployment_config")
+        pump_control_config = deployment_config.get("applications").get(self.config.pump_controller.value)
+        pump_size = pump_control_config.get("pump_size").replace("/","_")
+        self.pump_controller_pump = PumpType[pump_size]
+        self.pump_max = self.pump_controller_pump.value.get_max_rate()
+        
         self.state = SiaTestBenchState(app=self)
         self.server = TestBenchServer(state=self.state, app=self)
         await self.server.setup()
+        
+    async def set_ui_pump_params(self, params):
+        self.ui_pump_params = params
+        
+    async def get_ui_max_flow_rate(self):
+        return self.ui_pump_params.get("max_flow_rate")
 
     async def main_loop(self):
 
@@ -151,7 +164,11 @@ class SiaTestBenchApplication(Application):
             await self.server.cleanup()
             
     async def set_flow_rate(self, flow_rate: float):
-        await self.set_tag("TargetRate",flow_rate, self.config.pump_controller.value)
+        #flow rate needs to be normalized to the UI max flow rate
+        if await self.get_ui_max_flow_rate() is not None:
+            duty_cycle = flow_rate / await self.get_ui_max_flow_rate()
+            flow_rate = duty_cycle * self.pump_max
+            await self.set_tag("TargetRate",flow_rate, self.config.pump_controller.value)
 
     def check_off_command(self):
         return False

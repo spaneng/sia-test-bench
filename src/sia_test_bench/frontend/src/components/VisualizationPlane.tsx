@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 // import {
 //   LineChart,
 //   Line,
@@ -13,27 +13,11 @@ import { useTestBenchStore } from '../store/useTestBenchStore';
 import { TestBenchMockup } from './TestBenchMockup';
 import { MiniLiveChart } from './MiniLiveChart';
 import { CombinedLiveChart } from './CombinedLiveChart';
+import { Collapse } from './Collapse';
 import './VisualizationPlane.css';
 
 export function VisualizationPlane() {
   const { dataHistory, latestData, stateMachineState } = useTestBenchStore();
-  const [showCombined, setShowCombined] = useState(false);
-  const [miniChartsExiting, setMiniChartsExiting] = useState(false);
-
-  // Watch for state machine changes
-  useEffect(() => {
-    if (stateMachineState !== 'off' && !showCombined) {
-      // Trigger mini charts to recede
-      setMiniChartsExiting(true);
-      setTimeout(() => {
-        setShowCombined(true);
-        setMiniChartsExiting(false);
-      }, 300);
-    } else if (stateMachineState === 'off' && showCombined) {
-      // Revert back to mini charts
-      setShowCombined(false);
-    }
-  }, [stateMachineState, showCombined]);
 
   const chartData = useMemo(() => {
     return dataHistory.map((point) => ({
@@ -89,24 +73,42 @@ export function VisualizationPlane() {
       )} */}
 
       {/* Mini Live Charts - Real-time visualizations */}
+      <Collapse in={stateMachineState !== 'off'} timeout={300}>
+        <div className="combined-chart-container">
+          <CombinedLiveChart
+            pressureData={pressureData}
+            flowData={flowRateData}
+            latestPressure={latestData?.pressure}
+            latestFlow={latestData?.flowRate}
+          />
+        </div>
+      </Collapse>
+
       <div className="current-values">
-        {/* <h3>Live Metrics</h3> */}
-        {!showCombined && (
-          <div className={`value-grid ${miniChartsExiting ? 'exiting' : ''}`}>
-            <MiniLiveChart
-              label="Pressure"
-              data={pressureData}
-              unit="PSI"
-              color="#3b82f6"
-              latestValue={latestData?.pressure}
-            />
-            <MiniLiveChart
-              label="Flow Rate"
-              data={flowRateData}
-              unit="L/Hr"
-              color="#10b981"
-              latestValue={latestData?.flowRate}
-            />
+          {/* <h3>Live Metrics</h3> */}
+          
+          {/* Collapsible pressure/flow charts - visible when state is 'off' */}
+          <Collapse in={stateMachineState === 'off'} timeout={300}>
+            <div className="pressure-flow-grid">
+              <MiniLiveChart
+                label="Pressure"
+                data={pressureData}
+                unit="PSI"
+                color="#3b82f6"
+                latestValue={latestData?.pressure}
+              />
+              <MiniLiveChart
+                label="Flow Rate"
+                data={flowRateData}
+                unit="L/Hr"
+                color="#10b981"
+                latestValue={latestData?.flowRate}
+              />
+            </div>
+          </Collapse>
+          
+          {/* Static current/duty cycle charts - always visible */}
+          <div className="static-charts-grid">
             <MiniLiveChart
               label="Current"
               data={currentData}
@@ -122,15 +124,6 @@ export function VisualizationPlane() {
               latestValue={latestData?.pumpDutyCycle as number | undefined}
             />
           </div>
-        )}
-        {showCombined && (
-          <CombinedLiveChart
-            pressureData={pressureData}
-            flowData={flowRateData}
-            latestPressure={latestData?.pressure}
-            latestFlow={latestData?.flowRate}
-          />
-        )}
       </div>
 
       <div className="charts-container">

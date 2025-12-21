@@ -195,31 +195,31 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
             id: '1', 
             name: 'SIA Pump Model A', 
             model: 'Model A',
-            maxRPM: 80,
+            maxRPM: 3000,
             maxFlowRate: 50,
-            maxPressure: 1200,
+            maxPressure: 100,
             currentDraw: 5.5,
-            strokeLength: 1.5
+            strokeLength: 2.5
           },
           { 
             id: '2', 
             name: 'SIA Pump Model B', 
             model: 'Model B',
-            maxRPM: 80,
+            maxRPM: 3500,
             maxFlowRate: 75,
-            maxPressure: 1200,
-            currentDraw: 5.5,
-            strokeLength: 1.5
+            maxPressure: 120,
+            currentDraw: 7.2,
+            strokeLength: 3.0
           },
           { 
             id: '3', 
             name: 'SIA Pump Model C', 
             model: 'Model C',
-            maxRPM: 80,
+            maxRPM: 4000,
             maxFlowRate: 100,
-            maxPressure: 1200,
-            currentDraw: 5.5,
-            strokeLength: 1.5
+            maxPressure: 150,
+            currentDraw: 9.5,
+            strokeLength: 3.5
           },
         ];
         set({ availablePumps: mockPumps, isLoadingPumps: false });

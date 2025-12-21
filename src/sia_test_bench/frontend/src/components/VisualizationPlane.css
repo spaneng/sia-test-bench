@@ -42,6 +42,11 @@
   margin-bottom: 2rem;
 }
 
+/* Combined Chart Container - separate section above mini charts */
+.combined-chart-container {
+  margin-bottom: 1rem;
+}
+
 .current-values h3 {
   margin: 0 0 1rem 0;
   font-size: 1.125rem;
@@ -53,37 +58,21 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 1rem;
-  animation: expandIn 0.3s ease-out;
 }
 
-.value-grid.exiting {
-  animation: expandOut 0.3s ease-in forwards;
+/* Separate grid for pressure/flow charts (collapsible) */
+.pressure-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
 }
 
-@keyframes expandIn {
-  from {
-    opacity: 0;
-    transform: scaleY(0);
-    transform-origin: top;
-  }
-  to {
-    opacity: 1;
-    transform: scaleY(1);
-    transform-origin: top;
-  }
-}
-
-@keyframes expandOut {
-  from {
-    opacity: 1;
-    transform: scaleY(1);
-    transform-origin: top;
-  }
-  to {
-    opacity: 0;
-    transform: scaleY(0);
-    transform-origin: top;
-  }
+/* Separate grid for current/duty cycle charts (always visible) */
+.static-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1rem;
 }
 
 .value-card {
@@ -189,6 +178,63 @@
 }
 
 .mini-chart-canvas-wrapper {
+  flex: 1;
+  position: relative;
+  min-height: 0; /* Important for flex child */
+}
+
+/* Combined Live Chart - 2x2 tile size */
+.combined-live-chart {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  height: 300px; /* 2x height of mini chart (140px) + gap */
+}
+
+.combined-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.combined-chart-value {
+  display: flex;
+  flex-direction: column;
+}
+
+.combined-chart-value.left {
+  align-items: flex-start;
+}
+
+.combined-chart-value.right {
+  align-items: flex-end;
+}
+
+.combined-chart-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.combined-chart-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.combined-chart-unit {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: #6b7280;
+  margin-left: 0.25rem;
+}
+
+.combined-chart-canvas-wrapper {
   flex: 1;
   position: relative;
   min-height: 0; /* Important for flex child */

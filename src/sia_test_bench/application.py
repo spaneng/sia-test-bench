@@ -8,7 +8,6 @@ from pydoover.docker import Application
 from .app_config import SiaTestBenchConfig
 from .app_state import SiaTestBenchState
 from .server import TestBenchServer
-from .utils import PumpType
 
 log = logging.getLogger()
 
@@ -49,21 +48,9 @@ class SiaTestBenchApplication(Application):
 
     async def setup(self):
         """Initialize the state machine and web server."""
-        deployment_config = await self.get_channel_aggregate("deployment_config")
-        pump_control_config = deployment_config.get("applications").get(self.config.pump_controller.value)
-        pump_size = pump_control_config.get("pump_size").replace("/","_")
-        self.pump_controller_pump = PumpType[pump_size]
-        self.pump_max = self.pump_controller_pump.value.get_max_rate()
-        
         self.state = SiaTestBenchState(app=self)
         self.server = TestBenchServer(state=self.state, app=self)
         await self.server.setup()
-        
-    async def set_ui_pump_params(self, params):
-        self.ui_pump_params = params
-        
-    async def get_ui_max_flow_rate(self):
-        return self.ui_pump_params.get("max_flow_rate")
 
     async def main_loop(self):
 
@@ -87,11 +74,6 @@ class SiaTestBenchApplication(Application):
             flow_rate = self.get_tag("value", self.config.flow_sensor_app.value)
             current_draw = self.get_tag("value", self.config.current_draw_app.value)
             pump_duty_cycle = self.get_tag("PumpDutyCycle_ReadOnly", self.config.pump_controller.value)
-            pump_state = self.get_tag("AppState", self.config.pump_controller.value)
-            
-            # Normalize pump_state: convert "auto" to "on" for consistency
-            if pump_state == "auto":
-                pump_state = "on"
             
             if pump_duty_cycle is not None:
                 pump_duty_cycle = round(pump_duty_cycle * 100, 2)
@@ -112,7 +94,6 @@ class SiaTestBenchApplication(Application):
             pump_duty_cycle = None
             pulse_rate = None
             valve_state = None
-            pump_state = None
             self.current_pressure = None
             self.current_flow = None
         
@@ -125,7 +106,6 @@ class SiaTestBenchApplication(Application):
             'pumpDutyCycle': pump_duty_cycle,
             'pulseRate': pulse_rate,
             'valveState': valve_state,
-            'pumpState': pump_state,
         }
         
         # Check if data has changed from previous reading
@@ -154,7 +134,6 @@ class SiaTestBenchApplication(Application):
                 'pumpDutyCycle': pump_duty_cycle,
                 'pulseRate': pulse_rate,
                 'valveState': valve_state,
-                'pumpState': pump_state,
             }
             
             # Push data to frontend via WebSocket
@@ -172,11 +151,7 @@ class SiaTestBenchApplication(Application):
             await self.server.cleanup()
             
     async def set_flow_rate(self, flow_rate: float):
-        #flow rate needs to be normalized to the UI max flow rate
-        if await self.get_ui_max_flow_rate() is not None:
-            duty_cycle = flow_rate / await self.get_ui_max_flow_rate()
-            flow_rate = duty_cycle * self.pump_max
-            await self.set_tag("TargetRate",flow_rate, self.config.pump_controller.value)
+        await self.set_tag("TargetRate",flow_rate, self.config.pump_controller.value)
 
     def check_off_command(self):
         return False

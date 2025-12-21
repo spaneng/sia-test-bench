@@ -796,6 +796,10 @@
   text-align: center;
 }
 
+.verification-message.error {
+  color: #ef4444;
+}
+
 /* Test Completion Section */
 .test-completion-section {
   display: flex;
@@ -836,6 +840,21 @@
   height: 48px;
   border-radius: 50%;
   background: #10b981;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: bold;
+  animation: scaleIn 0.3s ease-out;
+}
+
+/* Error Cross */
+.error-cross {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #ef4444;
   color: white;
   display: flex;
   align-items: center;

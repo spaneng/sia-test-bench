@@ -15,7 +15,7 @@ import { MiniLiveChart } from './MiniLiveChart';
 import './VisualizationPlane.css';
 
 export function VisualizationPlane() {
-  const { dataHistory, latestData, connectionStatus } = useTestBenchStore();
+  const { dataHistory, latestData } = useTestBenchStore();
 
   const chartData = useMemo(() => {
     return dataHistory.map((point) => ({

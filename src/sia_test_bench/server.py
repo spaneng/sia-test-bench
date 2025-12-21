@@ -148,7 +148,13 @@ class TestBenchServer:
                 # User clicked Accept button for pressure test
                 if self.application:
                     self.application.shared_pressure_confirmation = True
-                    log.info("Pressure test confirmation received")
+                    # Store target pressure if provided
+                    target_pressure = data.get('target_pressure')
+                    if target_pressure is not None:
+                        self.application.target_max_pressure = float(target_pressure)
+                        log.info(f"Pressure test confirmation received with target: {target_pressure} PSI")
+                    else:
+                        log.info("Pressure test confirmation received (no target pressure specified)")
             elif command == 'confirm_flow_test':
                 # User clicked Accept button for flow test
                 if self.application:

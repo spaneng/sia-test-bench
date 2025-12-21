@@ -65,15 +65,15 @@ export function ControlPlane() {
     fetchAvailablePumps();
   }, [fetchAvailablePumps]);
 
-  // Watch state machine for max pressure stabilization outcomes
+  // Watch state machine for max pressure verification/stabilization outcomes
   useEffect(() => {
-    // Track when we're in the stabilisation state
-    if (stateMachineState === 'max_pressure_stabilise') {
+    // Track when we're in the verify state
+    if (stateMachineState === 'max_pressure_verify') {
       setPressureStabilising(true);
     }
     
-    // Check if we just entered max_pressure_run from max_pressure_stabilise (successful stabilization)
-    if (stateMachineState === 'max_pressure_run' && maxPressureVerifying && pressureStabilising) {
+    // Check if we just entered max_pressure_stabilise from max_pressure_verify (successful verification)
+    if (stateMachineState === 'max_pressure_stabilise' && maxPressureVerifying && pressureStabilising) {
       setMaxPressureVerifying(false);
       setMaxPressureVerified(true);
       setPressureStabilising(false);
@@ -83,7 +83,7 @@ export function ControlPlane() {
       }, 2000);
     }
     
-    // Check if we went back to max_pressure_start from max_pressure_stabilise (timeout/failed stabilization)
+    // Check if we went back to max_pressure_start from max_pressure_verify (timeout/failed verification)
     if (stateMachineState === 'max_pressure_start' && pressureStabilising) {
       // Show failure message
       setMaxPressureVerifying(false);
@@ -755,13 +755,13 @@ export function ControlPlane() {
             {currentTestView === 'auto' && (
               <>
                 {/* Show Max Pressure Test UI when in max_pressure states */}
-                {(stateMachineState === 'max_pressure_start' || stateMachineState === 'max_pressure_run' || stateMachineState === 'max_pressure_end') && (
+                {(stateMachineState === 'max_pressure_start' || stateMachineState === 'max_pressure_verify' || stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_end') && (
                   <>
                     <div className="test-view" key="auto-max-pressure-view">
                       {maxPressureComplete ? (
                         <div className="test-completion-section">
                           <div className="success-checkmark">✓</div>
-                          <p className="completion-message">Max Pressure Test Complete</p>
+                          <p className="completion-message">Pressure Stabilised</p>
                         </div>
                       ) : !maxPressureConfirmed ? (
                         <div className="test-confirmation-section">
@@ -780,12 +780,12 @@ export function ControlPlane() {
                       ) : maxPressureVerifying ? (
                         <div className="test-verification-section">
                           <div className="loading-spinner"></div>
-                          <p className="verification-message">Pressure stabilising...</p>
+                          <p className="verification-message">Verifying pressure...</p>
                         </div>
                       ) : maxPressureVerified ? (
                         <div className="test-verification-section">
                           <div className="success-checkmark">✓</div>
-                          <p className="verification-message">Pressure stabilised</p>
+                          <p className="verification-message">Pressure verified</p>
                         </div>
                       ) : pressureFailed ? (
                         <div className="test-verification-section">
@@ -793,10 +793,12 @@ export function ControlPlane() {
                           <p className="verification-message error">Pressure not reached</p>
                         </div>
                       ) : (
-                        <p>Max Pressure Test section content will go here.</p>
+                        <div className="test-run-section">
+                          <p className="test-run-message">Pressure stabilising...</p>
+                        </div>
                       )}
                     </div>
-                    {isTestRunning && maxPressureConfirmed && !maxPressureVerifying && (
+                    {isTestRunning && maxPressureConfirmed && !maxPressureVerifying && !maxPressureVerified && !pressureFailed && (
                       <div className="test-progress-container">
                         <div className="test-progress-bar">
                           <div 
@@ -922,7 +924,7 @@ export function ControlPlane() {
                   {maxPressureComplete ? (
                     <div className="test-completion-section">
                       <div className="success-checkmark">✓</div>
-                      <p className="completion-message">Max Pressure Test Complete</p>
+                      <p className="completion-message">Pressure Stabilised</p>
                     </div>
                   ) : !maxPressureConfirmed ? (
                     <div className="test-confirmation-section">
@@ -941,12 +943,12 @@ export function ControlPlane() {
                   ) : maxPressureVerifying ? (
                     <div className="test-verification-section">
                       <div className="loading-spinner"></div>
-                      <p className="verification-message">Pressure stabilising...</p>
+                      <p className="verification-message">Verifying pressure...</p>
                     </div>
                   ) : maxPressureVerified ? (
                     <div className="test-verification-section">
                       <div className="success-checkmark">✓</div>
-                      <p className="verification-message">Pressure stabilised</p>
+                      <p className="verification-message">Pressure verified</p>
                     </div>
                   ) : pressureFailed ? (
                     <div className="test-verification-section">
@@ -954,11 +956,13 @@ export function ControlPlane() {
                       <p className="verification-message error">Pressure not reached</p>
                     </div>
                   ) : (
-                    <p>Max Pressure Test section content will go here.</p>
+                    <div className="test-run-section">
+                      <p className="test-run-message">Pressure stabilising...</p>
+                    </div>
                   )}
                 </div>
                 {/* Progress bar at bottom of test section */}
-                {isTestRunning && currentTestView === 'max_pressure' && maxPressureConfirmed && !maxPressureVerifying && (
+                {isTestRunning && currentTestView === 'max_pressure' && maxPressureConfirmed && !maxPressureVerifying && !maxPressureVerified && !pressureFailed && (
                   <div className="test-progress-container">
                     <div className="test-progress-bar">
                       <div 

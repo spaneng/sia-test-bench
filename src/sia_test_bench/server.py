@@ -19,6 +19,23 @@ from sia_test_bench.test_reports import render_test_chart_png, generate_report_p
 log = logging.getLogger()
 
 
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    """CORS middleware to allow cross-origin requests."""
+    # Handle preflight OPTIONS requests
+    if request.method == 'OPTIONS':
+        response = web.Response()
+    else:
+        response = await handler(request)
+    
+    # Add CORS headers to all responses
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    
+    return response
+
 class TestBenchServer:
     """Web server for the SIA Test Bench application."""
     
@@ -36,8 +53,8 @@ class TestBenchServer:
 
     async def setup(self):
         """Initialize the web server."""
-        # Create aiohttp application
-        self.app = web.Application()
+        # Create aiohttp application with CORS middleware
+        self.app = web.Application(middlewares=[cors_middleware])
         
         # Setup API routes first
         self.app.router.add_get('/ws', self.websocket_handler)
@@ -46,6 +63,9 @@ class TestBenchServer:
         self.app.router.add_post('/api/pump/stop', self.stop_pump_handler)
         self.app.router.add_post('/api/tests/{test_id}/finalize', self.finalize_test_handler)
         self.app.router.add_get('/api/tests/{test_id}/report.pdf', self.get_report_pdf_handler)
+        # Add OPTIONS handler for CORS preflight
+        self.app.router.add_options('/api/pump/start', self.options_handler)
+        self.app.router.add_options('/api/pump/stop', self.options_handler)
         
         # Serve static files from frontend dist directory
         frontend_dist = Path(__file__).parent / 'frontend' / 'dist'
@@ -181,7 +201,18 @@ class TestBenchServer:
                     log.info("Flow test confirmation received")
             elif command == 'confirm_flow_accuracy_test':
                 # User clicked Accept button for flow accuracy test
+                # Calculate 20% of max pressure as target (same as max_flow)
                 if self.application:
+                    target_pressure = data.get('target_pressure')
+                    max_flow_rate = data.get('max_flow_rate')
+                    if target_pressure is not None:
+                        # Use 20% of max pressure value as target for verification
+                        self.application.target_flow_accuracy = target_pressure * 0.2
+                        log.info(f"Flow accuracy target set to {self.application.target_flow_accuracy} (20% of {target_pressure})")
+                    if max_flow_rate is not None:
+                        # Store max flow rate for calculating phase targets (10%, 50%, 100%)
+                        self.application.flow_accuracy_max_flow_rate = float(max_flow_rate)
+                        log.info(f"Flow accuracy max flow rate set to {max_flow_rate} L/Hr")
                     self.application.shared_flow_accuracy_confirmation = True
                     log.info("Flow accuracy test confirmation received")
             elif command == 'acknowledge_pressure_complete':
@@ -209,6 +240,19 @@ class TestBenchServer:
                     log.info("Test cancelled, mode set to: off")
             else:
                 log.debug(f"Unknown test command: {command}")
+        elif message_type == 'pump':
+            # Handle pump-related commands
+            command = data.get('command')
+            if command == 'set_pump_params':
+                # Save pump parameters from UI form
+                params = data.get('params', {})
+                if self.application:
+                    await self.application.set_ui_pump_params(params)
+                    log.info(f"Pump parameters saved: {params}")
+                else:
+                    log.warning("Application reference not set, cannot save pump parameters")
+            else:
+                log.debug(f"Unknown pump command: {command}")
         elif message_type == 'get_state':
             # Send current state
             await self.send_state_to_client(ws)
@@ -293,40 +337,23 @@ class TestBenchServer:
 
     async def get_pumps_handler(self, request: web.Request) -> web.Response:
         """Handle GET /api/pumps - return available pump types."""
-        pumps = [
-            {
-                'id': '1',
-                'name': 'SIA Pump Model A',
-                'model': 'Model A',
-                'maxRPM': 3000,
-                'maxFlowRate': 50,
-                'maxPressure': 100,
-                'currentDraw': 5.5,
-                'strokeLength': 2.5
-            },
-            {
-                'id': '2',
-                'name': 'SIA Pump Model B',
-                'model': 'Model B',
-                'maxRPM': 3500,
-                'maxFlowRate': 75,
-                'maxPressure': 120,
-                'currentDraw': 7.2,
-                'strokeLength': 3.0
-            },
-            {
-                'id': '3',
-                'name': 'SIA Pump Model C',
-                'model': 'Model C',
-                'maxRPM': 4000,
-                'maxFlowRate': 100,
-                'maxPressure': 150,
-                'currentDraw': 9.5,
-                'strokeLength': 3.5
-            },
-        ]
+        pumps_config_path = Path(__file__).parent / 'pumps_config.json'
+        try:
+            with open(pumps_config_path, 'r') as f:
+                pumps = json.load(f)
+        except FileNotFoundError:
+            log.error(f"Pumps config file not found at {pumps_config_path}")
+            return web.Response(text="Pumps configuration not found", status=500)
+        except json.JSONDecodeError as e:
+            log.error(f"Error parsing pumps config: {e}")
+            return web.Response(text="Invalid pumps configuration", status=500)
+        
         return web.json_response(pumps)
 
+    async def options_handler(self, request: web.Request) -> web.Response:
+        """Handle OPTIONS requests for CORS preflight."""
+        return web.Response()
+    
     async def start_pump_handler(self, request: web.Request) -> web.Response:
         """Handle POST /api/pump/start - start the pump."""
         await self.start_pump()
@@ -561,19 +588,33 @@ class TestBenchServer:
 
     async def start_pump(self):
         """Start the pump."""
-        if self.pump_state != 'on':
-            self.pump_state = 'on'
-            self.is_running = True
-            log.info("Pump started")
-            await self.broadcast_state()
+        if self.application:
+            try:
+                await self.application.start_pump()
+            except Exception as e:
+                log.error(f"Error calling application.start_pump(): {e}", exc_info=True)
+        else:
+            log.warning("Application reference not set, cannot start pump")
+        # if self.pump_state != 'on':
+        #     self.pump_state = 'on'
+        #     self.is_running = True
+        #     log.info("Pump started")
+        #     await self.broadcast_state()
 
     async def stop_pump(self):
         """Stop the pump."""
-        if self.pump_state != 'off':
-            self.pump_state = 'off'
-            self.is_running = False
-            log.info("Pump stopped")
-            await self.broadcast_state()
+        if self.application:
+            try:
+                await self.application.stop_pump()
+            except Exception as e:
+                log.error(f"Error calling application.stop_pump(): {e}", exc_info=True)
+        else:
+            log.warning("Application reference not set, cannot stop pump")
+        # if self.pump_state != 'off':
+        #     self.pump_state = 'off'
+        #     self.is_running = False
+        #     log.info("Pump stopped")
+        #     await self.broadcast_state()
 
     async def index_handler(self, request: web.Request) -> web.FileResponse:
         """Serve index.html for root path."""

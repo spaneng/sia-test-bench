@@ -8,8 +8,8 @@ export function ControlPlane() {
     connectionStatus,
     startPump,
     stopPump,
-    setWarningDisabled,
-    setWarningEnabled,
+    // setWarningDisabled,
+    // setWarningEnabled,
     clearData,
   } = useTestBenchStore();
 
@@ -93,26 +93,6 @@ export function ControlPlane() {
             className="btn btn-danger"
           >
             Stop Pump
-          </button>
-        </div>
-      </div>
-
-      <div className="control-section">
-        <h3>Warning System</h3>
-        <div className="button-group">
-          <button
-            onClick={setWarningDisabled}
-            disabled={connectionStatus !== 'connected' || pumpState === 'warning_disabled'}
-            className="btn btn-warning"
-          >
-            Disable Warning
-          </button>
-          <button
-            onClick={setWarningEnabled}
-            disabled={connectionStatus !== 'connected' || pumpState !== 'warning_disabled'}
-            className="btn btn-secondary"
-          >
-            Enable Warning
           </button>
         </div>
       </div>

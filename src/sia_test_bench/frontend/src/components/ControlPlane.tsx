@@ -8,7 +8,6 @@ export function ControlPlane() {
     availablePumps,
     isLoadingPumps,
     pumpState,
-    isRunning,
     connectionStatus,
     currentTestView,
     stateMachineState,
@@ -17,7 +16,10 @@ export function ControlPlane() {
     maxPressureProgress,
     maxFlowStabiliseProgress,
     maxFlowProgress,
-    flowAccuracyProgress,
+    flowAccuracyStabiliseProgress,
+    flowAccuracyPhase1Progress,
+    flowAccuracyPhase2Progress,
+    flowAccuracyPhase3Progress,
     maxPressureComplete,
     maxFlowComplete,
     flowAccuracyComplete,
@@ -47,6 +49,8 @@ export function ControlPlane() {
   const [pressureFailed, setPressureFailed] = useState(false);
   const [flowStabilising, setFlowStabilising] = useState(false);
   const [flowFailed, setFlowFailed] = useState(false);
+  const [flowAccuracyStabilising, setFlowAccuracyStabilising] = useState(false);
+  const [flowAccuracyFailed, setFlowAccuracyFailed] = useState(false);
   const [maxPressureVerifying, setMaxPressureVerifying] = useState(false);
   const [maxFlowVerifying, setMaxFlowVerifying] = useState(false);
   const [flowAccuracyVerifying, setFlowAccuracyVerifying] = useState(false);
@@ -142,6 +146,40 @@ export function ControlPlane() {
     }
   }, [stateMachineState, maxFlowVerifying, flowStabilising]);
 
+  // Watch state machine for flow accuracy verification/stabilization outcomes
+  useEffect(() => {
+    // Track when we're in the verify state
+    if (stateMachineState === 'flow_accuracy_verify') {
+      setFlowAccuracyStabilising(true);
+    }
+    
+    // Check if we just entered flow_accuracy_stabilise from flow_accuracy_verify (successful verification)
+    if (stateMachineState === 'flow_accuracy_stabilise' && flowAccuracyVerifying && flowAccuracyStabilising) {
+      setFlowAccuracyVerifying(false);
+      setFlowAccuracyVerified(true);
+      setFlowAccuracyStabilising(false);
+      // After showing green tick for 2 seconds, clear it
+      setTimeout(() => {
+        setFlowAccuracyVerified(false);
+      }, 2000);
+    }
+    
+    // Check if we went back to flow_accuracy_start from flow_accuracy_verify (timeout/failed verification)
+    if (stateMachineState === 'flow_accuracy_start' && flowAccuracyStabilising) {
+      // Show failure message
+      setFlowAccuracyVerifying(false);
+      setFlowAccuracyVerified(false);
+      setFlowAccuracyFailed(true);
+      setFlowAccuracyStabilising(false);
+      setIsTestRunning(false);
+      // After showing red X for 2 seconds, reset to Accept button
+      setTimeout(() => {
+        setFlowAccuracyFailed(false);
+        setFlowAccuracyConfirmed(false);
+      }, 2000);
+    }
+  }, [stateMachineState, flowAccuracyVerifying, flowAccuracyStabilising]);
+
   // Handle test completion - auto-return to test selection after 3 seconds (only in standalone mode)
   useEffect(() => {
     if (maxPressureComplete) {
@@ -209,6 +247,8 @@ export function ControlPlane() {
         setFlowAccuracyConfirmed(false);
         setFlowAccuracyVerifying(false);
         setFlowAccuracyVerified(false);
+        setFlowAccuracyFailed(false);
+        setFlowAccuracyStabilising(false);
       }, 3000);
       return () => clearTimeout(timer);
     }
@@ -355,7 +395,12 @@ export function ControlPlane() {
     setMaxPressureVerified(false);
     setMaxFlowVerified(false);
     setFlowAccuracyVerified(false);
-    // TODO: For auto test, implement sequential execution of max pressure and max flow tests
+    setPressureFailed(false);
+    setFlowFailed(false);
+    setFlowAccuracyFailed(false);
+    setPressureStabilising(false);
+    setFlowStabilising(false);
+    setFlowAccuracyStabilising(false);
   };
 
   const handleCancelTest = () => {
@@ -375,6 +420,12 @@ export function ControlPlane() {
     setMaxPressureVerified(false);
     setMaxFlowVerified(false);
     setFlowAccuracyVerified(false);
+    setPressureFailed(false);
+    setFlowFailed(false);
+    setFlowAccuracyFailed(false);
+    setPressureStabilising(false);
+    setFlowStabilising(false);
+    setFlowAccuracyStabilising(false);
     setIsTestRunning(false);
     // Reset progress bars
     resetTestProgress();
@@ -417,17 +468,14 @@ export function ControlPlane() {
       setFlowAccuracyConfirmed(true);
       setFlowAccuracyVerifying(true);
       setIsTestRunning(true);
-      // Send confirmation to backend
-      sendMessage({ type: 'test', command: 'confirm_flow_accuracy_test' });
-      // Simulate verification after 4 seconds
-      setTimeout(() => {
-        setFlowAccuracyVerifying(false);
-        setFlowAccuracyVerified(true);
-        // After showing green tick for 2 seconds, proceed to test content
-        setTimeout(() => {
-          setFlowAccuracyVerified(false);
-        }, 2000);
-      }, 4000);
+      // Send confirmation to backend with target pressure and max flow rate
+      sendMessage({ 
+        type: 'test', 
+        command: 'confirm_flow_accuracy_test',
+        target_pressure: selectedPump?.maxPressure,
+        max_flow_rate: selectedPump?.maxFlowRate
+      });
+      // State machine will handle verification - no setTimeout needed
     }
   };
 
@@ -457,6 +505,22 @@ export function ControlPlane() {
         ...editablePumpData,
       };
       setSelectedPump(updatedPump);
+      // Send pump parameters to server
+      const params = {
+        name: editablePumpData.name,
+        model: editablePumpData.model,
+        max_rpm: editablePumpData.maxRPM,
+        max_flow_rate: editablePumpData.maxFlowRate,
+        max_pressure: editablePumpData.maxPressure,
+        current_draw: editablePumpData.currentDraw,
+        stroke_length: editablePumpData.strokeLength,
+      };
+      sendMessage({ 
+        type: 'pump', 
+        command: 'set_pump_params', 
+        params 
+      });
+
     }
     // Set showPumpInfoView to false - the ref will prevent useEffect from resetting it
     setShowPumpInfoView(false);
@@ -884,7 +948,7 @@ export function ControlPlane() {
                           <p className="confirmation-message">
                             Please confirm the valves and relief have been set.
                             <br />
-                            Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.
+                            <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.</strong>
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -964,7 +1028,7 @@ export function ControlPlane() {
                           <p className="confirmation-message">
                             Please confirm the valves and relief have been set.
                             <br />
-                            Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
+                            <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -1030,7 +1094,7 @@ export function ControlPlane() {
                 )}
                 
                 {/* Show Flow Accuracy Test UI when in flow_accuracy states */}
-                {(stateMachineState === 'flow_accuracy_start' || stateMachineState === 'flow_accuracy_run' || stateMachineState === 'flow_accuracy_end') && (
+                {(stateMachineState === 'flow_accuracy_start' || stateMachineState === 'flow_accuracy_verify' || stateMachineState === 'flow_accuracy_stabilise' || stateMachineState === 'flow_accuracy_phase1' || stateMachineState === 'flow_accuracy_phase2' || stateMachineState === 'flow_accuracy_phase3' || stateMachineState === 'flow_accuracy_end') && (
                   <>
                     <div className="test-view" key="auto-flow-accuracy-view">
                       {flowAccuracyComplete ? (
@@ -1042,7 +1106,9 @@ export function ControlPlane() {
                       ) : !flowAccuracyConfirmed ? (
                         <div className="test-confirmation-section">
                           <p className="confirmation-message">
-                            Please confirm the valves and relief have been set
+                            Please confirm the valves and relief have been set.
+                            <br />
+                            <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -1054,26 +1120,86 @@ export function ControlPlane() {
                       ) : flowAccuracyVerifying ? (
                         <div className="test-verification-section">
                           <div className="loading-spinner"></div>
-                          <p className="verification-message">Verifying flow...</p>
+                          <p className="verification-message">Verifying pressure...</p>
                         </div>
                       ) : flowAccuracyVerified ? (
                         <div className="test-verification-section">
                           <div className="success-checkmark">✓</div>
-                          <p className="verification-message">Verifying flow...</p>
+                          <p className="verification-message">Pressure verified</p>
+                        </div>
+                      ) : flowAccuracyFailed ? (
+                        <div className="test-verification-section">
+                          <div className="error-cross">✗</div>
+                          <p className="verification-message error">Pressure not reached</p>
+                        </div>
+                      ) : stateMachineState === 'flow_accuracy_stabilise' ? (
+                        <div className="test-run-section">
+                          <p className="test-run-message">Flow stabilising...</p>
+                        </div>
+                      ) : stateMachineState === 'flow_accuracy_phase1' ? (
+                        <div className="test-run-section">
+                          <p className="test-run-message">10% Flow Rate...</p>
+                        </div>
+                      ) : stateMachineState === 'flow_accuracy_phase2' ? (
+                        <div className="test-run-section">
+                          <p className="test-run-message">50% Flow Rate...</p>
+                        </div>
+                      ) : stateMachineState === 'flow_accuracy_phase3' ? (
+                        <div className="test-run-section">
+                          <p className="test-run-message">100% Flow Rate...</p>
                         </div>
                       ) : (
-                        <p>Flow Accuracy Test section content will go here.</p>
+                        <div className="test-run-section">
+                          <p className="test-run-message">Preparing test...</p>
+                        </div>
                       )}
                     </div>
-                    {isTestRunning && flowAccuracyConfirmed && !flowAccuracyVerifying && (
+                    {/* Progress bar for stabilise phase */}
+                    {isTestRunning && stateMachineState === 'flow_accuracy_stabilise' && (
                       <div className="test-progress-container">
                         <div className="test-progress-bar">
                           <div 
                             className="test-progress-fill" 
-                            style={{ width: `${flowAccuracyProgress}%` }}
+                            style={{ width: `${flowAccuracyStabiliseProgress}%` }}
                           ></div>
                         </div>
-                        <p className="test-progress-text">{flowAccuracyProgress.toFixed(1)}%</p>
+                        <p className="test-progress-text">{flowAccuracyStabiliseProgress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                    {/* Progress bar for phase 1 */}
+                    {isTestRunning && stateMachineState === 'flow_accuracy_phase1' && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${flowAccuracyPhase1Progress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{flowAccuracyPhase1Progress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                    {/* Progress bar for phase 2 */}
+                    {isTestRunning && stateMachineState === 'flow_accuracy_phase2' && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${flowAccuracyPhase2Progress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{flowAccuracyPhase2Progress.toFixed(1)}%</p>
+                      </div>
+                    )}
+                    {/* Progress bar for phase 3 */}
+                    {isTestRunning && stateMachineState === 'flow_accuracy_phase3' && (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div 
+                            className="test-progress-fill" 
+                            style={{ width: `${flowAccuracyPhase3Progress}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{flowAccuracyPhase3Progress.toFixed(1)}%</p>
                       </div>
                     )}
                   </>
@@ -1101,7 +1227,7 @@ export function ControlPlane() {
                       <p className="confirmation-message">
                         Please confirm the valves and relief have been set.
                         <br />
-                        Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.
+                        <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.</strong>
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -1179,7 +1305,7 @@ export function ControlPlane() {
                       <p className="confirmation-message">
                         Please confirm the valves and relief have been set.
                         <br />
-                        Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
+                        <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -1256,7 +1382,9 @@ export function ControlPlane() {
                   ) : !flowAccuracyConfirmed ? (
                     <div className="test-confirmation-section">
                       <p className="confirmation-message">
-                        Please confirm the valves and relief have been set
+                        Please confirm the valves and relief have been set.
+                        <br />
+                        <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -1268,27 +1396,86 @@ export function ControlPlane() {
                   ) : flowAccuracyVerifying ? (
                     <div className="test-verification-section">
                       <div className="loading-spinner"></div>
-                      <p className="verification-message">Verifying flow...</p>
+                      <p className="verification-message">Verifying pressure...</p>
                     </div>
                   ) : flowAccuracyVerified ? (
                     <div className="test-verification-section">
                       <div className="success-checkmark">✓</div>
-                      <p className="verification-message">Verifying flow...</p>
+                      <p className="verification-message">Pressure verified</p>
+                    </div>
+                  ) : flowAccuracyFailed ? (
+                    <div className="test-verification-section">
+                      <div className="error-cross">✗</div>
+                      <p className="verification-message error">Pressure not reached</p>
+                    </div>
+                  ) : stateMachineState === 'flow_accuracy_stabilise' ? (
+                    <div className="test-run-section">
+                      <p className="test-run-message">Flow stabilising...</p>
+                    </div>
+                  ) : stateMachineState === 'flow_accuracy_phase1' ? (
+                    <div className="test-run-section">
+                      <p className="test-run-message">10% Flow Rate...</p>
+                    </div>
+                  ) : stateMachineState === 'flow_accuracy_phase2' ? (
+                    <div className="test-run-section">
+                      <p className="test-run-message">50% Flow Rate...</p>
+                    </div>
+                  ) : stateMachineState === 'flow_accuracy_phase3' ? (
+                    <div className="test-run-section">
+                      <p className="test-run-message">100% Flow Rate...</p>
                     </div>
                   ) : (
-                    <p>Flow Accuracy Test section content will go here.</p>
+                    <div className="test-run-section">
+                      <p className="test-run-message">Preparing test...</p>
+                    </div>
                   )}
                 </div>
-                {/* Progress bar at bottom of test section */}
-                {isTestRunning && currentTestView === 'flow_accuracy' && flowAccuracyConfirmed && !flowAccuracyVerifying && (
+                {/* Progress bar for stabilise phase */}
+                {isTestRunning && currentTestView === 'flow_accuracy' && stateMachineState === 'flow_accuracy_stabilise' && (
                   <div className="test-progress-container">
                     <div className="test-progress-bar">
                       <div 
                         className="test-progress-fill" 
-                        style={{ width: `${flowAccuracyProgress}%` }}
+                        style={{ width: `${flowAccuracyStabiliseProgress}%` }}
                       ></div>
                     </div>
-                    <p className="test-progress-text">{flowAccuracyProgress.toFixed(1)}%</p>
+                    <p className="test-progress-text">{flowAccuracyStabiliseProgress.toFixed(1)}%</p>
+                  </div>
+                )}
+                {/* Progress bar for phase 1 */}
+                {isTestRunning && currentTestView === 'flow_accuracy' && stateMachineState === 'flow_accuracy_phase1' && (
+                  <div className="test-progress-container">
+                    <div className="test-progress-bar">
+                      <div 
+                        className="test-progress-fill" 
+                        style={{ width: `${flowAccuracyPhase1Progress}%` }}
+                      ></div>
+                    </div>
+                    <p className="test-progress-text">{flowAccuracyPhase1Progress.toFixed(1)}%</p>
+                  </div>
+                )}
+                {/* Progress bar for phase 2 */}
+                {isTestRunning && currentTestView === 'flow_accuracy' && stateMachineState === 'flow_accuracy_phase2' && (
+                  <div className="test-progress-container">
+                    <div className="test-progress-bar">
+                      <div 
+                        className="test-progress-fill" 
+                        style={{ width: `${flowAccuracyPhase2Progress}%` }}
+                      ></div>
+                    </div>
+                    <p className="test-progress-text">{flowAccuracyPhase2Progress.toFixed(1)}%</p>
+                  </div>
+                )}
+                {/* Progress bar for phase 3 */}
+                {isTestRunning && currentTestView === 'flow_accuracy' && stateMachineState === 'flow_accuracy_phase3' && (
+                  <div className="test-progress-container">
+                    <div className="test-progress-bar">
+                      <div 
+                        className="test-progress-fill" 
+                        style={{ width: `${flowAccuracyPhase3Progress}%` }}
+                      ></div>
+                    </div>
+                    <p className="test-progress-text">{flowAccuracyPhase3Progress.toFixed(1)}%</p>
                   </div>
                 )}
               </>
@@ -1299,7 +1486,15 @@ export function ControlPlane() {
 
       {/* Bottom Section: Manual Control */}
       <div className={`manual-control-section ${isExiting ? 'exiting' : ''}`}>
-        <h3>Manual Control</h3>
+        <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Manual Control</span>
+          <div>
+            <span style={{ marginRight: '0.5rem', color: '#6b7280', fontWeight: 400 }}>Pump:</span>
+            <span style={{ color: getPumpStateColor() }}>
+              {pumpState ? pumpState.toUpperCase() : ''}
+            </span>
+          </div>
+        </h3>
         {isTestInProgress ? (
           <div className="manual-control-disabled">
             <p className="disabled-message">
@@ -1308,18 +1503,6 @@ export function ControlPlane() {
           </div>
         ) : (
           <div className={`manual-control-content ${manualControlExiting ? 'exiting' : ''}`}>
-            <div className="status-card">
-          <div className="status-row">
-            <span>Current State:</span>
-            <span style={{ color: getPumpStateColor() }}>
-              {pumpState.toUpperCase()}
-            </span>
-          </div>
-          <div className="status-row">
-            <span>Running:</span>
-            <span>{isRunning ? 'YES' : 'NO'}</span>
-          </div>
-        </div>
 
         <div className="control-row">
           <div className="button-group button-group-left">

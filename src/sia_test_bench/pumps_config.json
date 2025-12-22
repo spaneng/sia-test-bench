@@ -1,0 +1,83 @@
+[
+  {
+    "id": "1",
+    "name": "SIA L15 1/8\"",
+    "model": "L15 1/8\"",
+    "maxRPM": 80,
+    "maxFlowRate": 0.96,
+    "maxPressure": 1200,
+    "currentDraw": 1,
+    "strokeLength": 1.5
+  },
+  {
+    "id": "2",
+    "name": "SIA L25 1/4\"",
+    "model": "L25 1/4\"",
+    "maxRPM": 80,
+    "maxFlowRate": 3.84,
+    "maxPressure": 1200,
+    "currentDraw": 2.5,
+    "strokeLength": 1.5
+  },
+  {
+    "id": "3",
+    "name": "SIA L35 3/8\"",
+    "model": "L35 3/8\"",
+    "maxRPM": 80,
+    "maxFlowRate": 8.64,
+    "maxPressure": 1200,
+    "currentDraw": 3.5,
+    "strokeLength": 1.5
+  },
+  {
+    "id": "4",
+    "name": "SIA L50 1/2\"",
+    "model": "L50 1/2\"",
+    "maxRPM": 80,
+    "maxFlowRate": 15.36,
+    "maxPressure": 1200,
+    "currentDraw": 4.5,
+    "strokeLength": 1.5
+  },
+  {
+    "id": "5",
+    "name": "SIA L75 3/4\"",
+    "model": "L75 3/4\"",
+    "maxRPM": 80,
+    "maxFlowRate": 34.56,
+    "maxPressure": 1200,
+    "currentDraw": 7.5,
+    "strokeLength": 1.5
+  },
+  {
+    "id": "6",
+    "name": "SIA L100 1\"",
+    "model": "L100 1\"",
+    "maxRPM": 80,
+    "maxFlowRate": 61.44,
+    "maxPressure": 1200,
+    "currentDraw": 10.5,
+    "strokeLength": 1.5
+  },
+  {
+    "id": "7",
+    "name": "SIA L150 1 1/2\"",
+    "model": "L150 1 1/2\"",
+    "maxRPM": 80,
+    "maxFlowRate": 136.8,
+    "maxPressure": 1200,
+    "currentDraw": 15.5,
+    "strokeLength": 1.5
+  },
+  {
+    "id": "8",
+    "name": "SIA L225 2 1/4\"",
+    "model": "L225 2 1/4\"",
+    "maxRPM": 80,
+    "maxFlowRate": 312,
+    "maxPressure": 1200,
+    "currentDraw": 20.5,
+    "strokeLength": 1.5
+  }
+]
+

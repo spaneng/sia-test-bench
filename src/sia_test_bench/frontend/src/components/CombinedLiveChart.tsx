@@ -45,7 +45,7 @@ export function CombinedLiveChart({
         },
         y: {
           auto: true,
-          range: (u, min, max) => {
+          range: (_u, _min, max) => {
             // Ensure minimum is always 0
             const rangeMin = 0;
             // Add 10% padding at top, ensure max is at least 1 to avoid divide by zero
@@ -56,7 +56,7 @@ export function CombinedLiveChart({
         },
         flow: {
           auto: true,
-          range: (u, min, max) => {
+          range: (_u, _min, max) => {
             // Ensure minimum is always 0
             const rangeMin = 0;
             // Add 10% padding at top, ensure max is at least 1 to avoid divide by zero

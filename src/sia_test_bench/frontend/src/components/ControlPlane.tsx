@@ -8,7 +8,6 @@ export function ControlPlane() {
     availablePumps,
     isLoadingPumps,
     pumpState,
-    isRunning,
     connectionStatus,
     currentTestView,
     stateMachineState,

@@ -38,7 +38,7 @@ export interface TestBenchState {
   isLoadingPumps: boolean;
   
   // Pump control state
-  pumpState: 'off' | 'on' | 'warning_disabled';
+  pumpState: string;
   isRunning: boolean;
   targetFlow: number;
   
@@ -125,7 +125,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   availablePumps: [] as PumpType[],
   selectedPump: null,
   isLoadingPumps: false,
-  pumpState: 'warning_disabled',
+  pumpState: '',
   isRunning: false,
   targetFlow: 0,
   currentTestView: 'none',
@@ -239,7 +239,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       });
       if (response.ok) {
         const data = await response.json();
-        set({ pumpState: data.state as 'on' | 'off' | 'warning_disabled', isRunning: data.state === 'on' });
+        set({ pumpState: data.state, isRunning: data.state === 'on' });
       } else {
         console.error('Failed to start pump');
       }
@@ -258,7 +258,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       });
       if (response.ok) {
         const data = await response.json();
-        set({ pumpState: data.state as 'on' | 'off' | 'warning_disabled', isRunning: data.state === 'on' });
+        set({ pumpState: data.state, isRunning: data.state === 'on' });
       } else {
         console.error('Failed to stop pump');
       }
@@ -267,17 +267,19 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
     }
   },
   
-  setWarningDisabled: async () => {
-    // TODO: Call backend API
-    set({ pumpState: 'warning_disabled' });
-  },
-  
-  setWarningEnabled: async () => {
-    // TODO: Call backend API
-    const currentState = get().pumpState;
-    if (currentState === 'warning_disabled') {
-      set({ pumpState: 'off' });
-    }
-  },
+    setWarningDisabled: async () => {
+      // TODO: Call backend API
+      // Frontend now blindly follows backend pumpState, so we shouldn't set it here
+      // set({ pumpState: 'warning_disabled' });
+    },
+    
+    setWarningEnabled: async () => {
+      // TODO: Call backend API
+      // Frontend now blindly follows backend pumpState, so we shouldn't set it here
+      // const currentState = get().pumpState;
+      // if (currentState === 'warning_disabled') {
+      //   set({ pumpState: 'off' });
+      // }
+    },
 }));
 

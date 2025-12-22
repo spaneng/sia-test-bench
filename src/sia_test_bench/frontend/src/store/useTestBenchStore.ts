@@ -49,7 +49,10 @@ export interface TestBenchState {
   maxPressureProgress: number;
   maxFlowStabiliseProgress: number;
   maxFlowProgress: number;
-  flowAccuracyProgress: number;
+  flowAccuracyStabiliseProgress: number;
+  flowAccuracyPhase1Progress: number;
+  flowAccuracyPhase2Progress: number;
+  flowAccuracyPhase3Progress: number;
   maxPressureComplete: boolean;
   maxFlowComplete: boolean;
   flowAccuracyComplete: boolean;
@@ -102,7 +105,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   maxPressureProgress: 0,
   maxFlowStabiliseProgress: 0,
   maxFlowProgress: 0,
-  flowAccuracyProgress: 0,
+  flowAccuracyStabiliseProgress: 0,
+  flowAccuracyPhase1Progress: 0,
+  flowAccuracyPhase2Progress: 0,
+  flowAccuracyPhase3Progress: 0,
   maxPressureComplete: false,
   maxFlowComplete: false,
   flowAccuracyComplete: false,
@@ -136,8 +142,14 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       set({ maxFlowStabiliseProgress: progress });
     } else if (test === 'max_flow') {
       set({ maxFlowProgress: progress });
-    } else if (test === 'flow_accuracy') {
-      set({ flowAccuracyProgress: progress });
+    } else if (test === 'flow_accuracy_stabilise') {
+      set({ flowAccuracyStabiliseProgress: progress });
+    } else if (test === 'flow_accuracy_phase1') {
+      set({ flowAccuracyPhase1Progress: progress });
+    } else if (test === 'flow_accuracy_phase2') {
+      set({ flowAccuracyPhase2Progress: progress });
+    } else if (test === 'flow_accuracy_phase3') {
+      set({ flowAccuracyPhase3Progress: progress });
     }
   },
   
@@ -147,7 +159,12 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
     } else if (test === 'max_flow') {
       set({ maxFlowComplete: true, maxFlowProgress: 100 });
     } else if (test === 'flow_accuracy') {
-      set({ flowAccuracyComplete: true, flowAccuracyProgress: 100 });
+      set({ 
+        flowAccuracyComplete: true, 
+        flowAccuracyPhase1Progress: 100,
+        flowAccuracyPhase2Progress: 100,
+        flowAccuracyPhase3Progress: 100
+      });
     }
   },
   
@@ -167,7 +184,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
     maxPressureProgress: 0,
     maxFlowStabiliseProgress: 0,
     maxFlowProgress: 0,
-    flowAccuracyProgress: 0,
+    flowAccuracyStabiliseProgress: 0,
+    flowAccuracyPhase1Progress: 0,
+    flowAccuracyPhase2Progress: 0,
+    flowAccuracyPhase3Progress: 0,
     maxPressureComplete: false,
     maxFlowComplete: false,
     flowAccuracyComplete: false

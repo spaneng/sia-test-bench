@@ -21,8 +21,12 @@ class SiaTestBenchState:
         {"name": "max_flow_stabilise", "on_enter": "on_enter_max_flow_stabilise"},
         {"name": "max_flow_run", "on_enter": "on_enter_max_flow_run", "on_exit": "stop_pump"},
         {"name": "max_flow_end"},
-        {"name": "flow_accuracy_start"},
-        {"name": "flow_accuracy_run", "on_enter": "on_enter_flow_accuracy_run"},
+        {"name": "flow_accuracy_start", "on_enter": "stop_pump"},
+        {"name": "flow_accuracy_verify", "timeout": 30, "on_timeout": "init_flow_accuracy", "on_enter": "start_pump"},
+        {"name": "flow_accuracy_stabilise", "on_enter": "on_enter_flow_accuracy_stabilise"},
+        {"name": "flow_accuracy_phase1", "on_enter": "on_enter_flow_accuracy_phase1"},
+        {"name": "flow_accuracy_phase2", "on_enter": "on_enter_flow_accuracy_phase2"},
+        {"name": "flow_accuracy_phase3", "on_enter": "on_enter_flow_accuracy_phase3", "on_exit": "stop_pump"},
         {"name": "flow_accuracy_end"},
     ]
 
@@ -39,9 +43,13 @@ class SiaTestBenchState:
         {"trigger": "stabilise_max_flow", "source": "max_flow_verify", "dest": "max_flow_stabilise"},
         {"trigger": "run_max_flow", "source": "max_flow_stabilise", "dest": "max_flow_run"},
         {"trigger": "stop_max_flow", "source": "max_flow_run", "dest": "max_flow_end"},
-        {"trigger": "init_flow_accuracy", "source": ["off", "max_flow_end"], "dest": "flow_accuracy_start"},
-        {"trigger": "start_flow_accuracy", "source": "flow_accuracy_start", "dest": "flow_accuracy_run"},
-        {"trigger": "stop_flow_accuracy", "source": "flow_accuracy_run", "dest": "flow_accuracy_end"},
+        {"trigger": "init_flow_accuracy", "source": ["off", "max_flow_end", "flow_accuracy_verify"], "dest": "flow_accuracy_start"},
+        {"trigger": "verify_flow_accuracy", "source": "flow_accuracy_start", "dest": "flow_accuracy_verify"},
+        {"trigger": "stabilise_flow_accuracy", "source": "flow_accuracy_verify", "dest": "flow_accuracy_stabilise"},
+        {"trigger": "run_flow_accuracy_phase1", "source": "flow_accuracy_stabilise", "dest": "flow_accuracy_phase1"},
+        {"trigger": "run_flow_accuracy_phase2", "source": "flow_accuracy_phase1", "dest": "flow_accuracy_phase2"},
+        {"trigger": "run_flow_accuracy_phase3", "source": "flow_accuracy_phase2", "dest": "flow_accuracy_phase3"},
+        {"trigger": "stop_flow_accuracy", "source": "flow_accuracy_phase3", "dest": "flow_accuracy_end"},
         {"trigger": "set_off", "source": "*", "dest": "off"},
         {"trigger": "stop_auto", "source": "flow_accuracy_end", "dest": "off"},
     ]
@@ -168,10 +176,26 @@ class SiaTestBenchState:
                 log.info("Flow accuracy run ready received - user clicked Accept")
                 # Reset confirmation flag after reading it
                 self.app.shared_flow_accuracy_confirmation = False
-                await self.start_flow_accuracy()
-        elif s == "flow_accuracy_run":
-            if self.app.check_flow_accuracy_end_ready():
-                log.info("Flow accuracy end ready received")
+                await self.verify_flow_accuracy()
+        elif s == "flow_accuracy_verify":
+            if self.app.check_flow_accuracy_verified():
+                log.info("Flow accuracy verified")
+                await self.stabilise_flow_accuracy()
+        elif s == "flow_accuracy_stabilise":
+            if self.app.check_flow_accuracy_stabilised():
+                log.info("Flow accuracy stabilisation complete")
+                await self.run_flow_accuracy_phase1()
+        elif s == "flow_accuracy_phase1":
+            if self.app.check_flow_accuracy_phase1_complete():
+                log.info("Flow accuracy phase 1 complete")
+                await self.run_flow_accuracy_phase2()
+        elif s == "flow_accuracy_phase2":
+            if self.app.check_flow_accuracy_phase2_complete():
+                log.info("Flow accuracy phase 2 complete")
+                await self.run_flow_accuracy_phase3()
+        elif s == "flow_accuracy_phase3":
+            if self.app.check_flow_accuracy_phase3_complete():
+                log.info("Flow accuracy phase 3 complete")
                 await self.stop_flow_accuracy()
         elif s == "flow_accuracy_end":
             if self.app.check_flow_accuracy_complete():
@@ -219,11 +243,29 @@ class SiaTestBenchState:
         self.app.max_flow_run_start_time = time.time()
         log.info("Max flow run started - 10 second timer initiated")
 
-    async def on_enter_flow_accuracy_run(self):
-        """Set the timer when entering flow_accuracy_run state."""
+    async def on_enter_flow_accuracy_stabilise(self):
+        """Set the timer when entering flow_accuracy_stabilise state."""
         import time
-        self.app.flow_accuracy_run_start_time = time.time()
-        log.info("Flow accuracy run started - 10 second timer initiated")
+        self.app.flow_accuracy_stabilise_start_time = time.time()
+        log.info("Flow accuracy stabilise started - timer initiated")
+
+    async def on_enter_flow_accuracy_phase1(self):
+        """Set the timer when entering flow_accuracy_phase1 state."""
+        import time
+        self.app.flow_accuracy_phase1_start_time = time.time()
+        log.info("Flow accuracy phase 1 started - timer initiated")
+
+    async def on_enter_flow_accuracy_phase2(self):
+        """Set the timer when entering flow_accuracy_phase2 state."""
+        import time
+        self.app.flow_accuracy_phase2_start_time = time.time()
+        log.info("Flow accuracy phase 2 started - timer initiated")
+
+    async def on_enter_flow_accuracy_phase3(self):
+        """Set the timer when entering flow_accuracy_phase3 state."""
+        import time
+        self.app.flow_accuracy_phase3_start_time = time.time()
+        log.info("Flow accuracy phase 3 started - timer initiated")
 
     async def on_enter_off(self):
         """Clean up when entering off state."""

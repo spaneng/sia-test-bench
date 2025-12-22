@@ -16,7 +16,10 @@ MAX_PRESSURE_STABILISE_DURATION = 10.0
 MAX_PRESSURE_RUN_DURATION = 10.0
 MAX_FLOW_STABILISE_DURATION = 10.0
 MAX_FLOW_RUN_DURATION = 10.0
-FLOW_ACCURACY_TEST_DURATION = 10.0
+FLOW_ACCURACY_STABILISE_DURATION = 10.0
+FLOW_ACCURACY_PHASE1_DURATION = 10.0
+FLOW_ACCURACY_PHASE2_DURATION = 10.0
+FLOW_ACCURACY_PHASE3_DURATION = 10.0
 
 
 class SiaTestBenchApplication(Application):
@@ -33,7 +36,10 @@ class SiaTestBenchApplication(Application):
         self.max_pressure_run_start_time: float = None
         self.max_flow_stabilise_start_time: float = None
         self.max_flow_run_start_time: float = None
-        self.flow_accuracy_run_start_time: float = None
+        self.flow_accuracy_stabilise_start_time: float = None
+        self.flow_accuracy_phase1_start_time: float = None
+        self.flow_accuracy_phase2_start_time: float = None
+        self.flow_accuracy_phase3_start_time: float = None
         self.shared_pressure_confirmation: bool = False
         self.shared_flow_confirmation: bool = False
         self.shared_flow_accuracy_confirmation: bool = False
@@ -45,6 +51,7 @@ class SiaTestBenchApplication(Application):
         self.target_max_pressure: float = None
         self.current_flow: float = None
         self.target_max_flow: float = None
+        self.target_flow_accuracy: float = None  # 20% of max pressure for flow accuracy verify
 
     async def setup(self):
         """Initialize the state machine and web server."""
@@ -230,12 +237,40 @@ class SiaTestBenchApplication(Application):
     def check_flow_accuracy_run_ready(self):
         return self.shared_flow_accuracy_confirmation
     
-    def check_flow_accuracy_end_ready(self):
-        # Check if test duration has elapsed since entering flow_accuracy_run
-        if self.flow_accuracy_run_start_time is None:
+    def check_flow_accuracy_verified(self):
+        log.info(f"Current pressure: {self.current_pressure}, Target flow accuracy pressure (20% of max): {self.target_flow_accuracy}")
+        # Check if current pressure reading meets or exceeds 20% of max pressure
+        if self.current_pressure is None or self.target_flow_accuracy is None:
             return False
-        elapsed_time = time.time() - self.flow_accuracy_run_start_time
-        return elapsed_time >= FLOW_ACCURACY_TEST_DURATION
+        return self.current_pressure >= self.target_flow_accuracy
+    
+    def check_flow_accuracy_stabilised(self):
+        # Check if stabilisation duration has elapsed since entering flow_accuracy_stabilise
+        if self.flow_accuracy_stabilise_start_time is None:
+            return False
+        elapsed_time = time.time() - self.flow_accuracy_stabilise_start_time
+        return elapsed_time >= FLOW_ACCURACY_STABILISE_DURATION
+    
+    def check_flow_accuracy_phase1_complete(self):
+        # Check if phase 1 duration has elapsed
+        if self.flow_accuracy_phase1_start_time is None:
+            return False
+        elapsed_time = time.time() - self.flow_accuracy_phase1_start_time
+        return elapsed_time >= FLOW_ACCURACY_PHASE1_DURATION
+    
+    def check_flow_accuracy_phase2_complete(self):
+        # Check if phase 2 duration has elapsed
+        if self.flow_accuracy_phase2_start_time is None:
+            return False
+        elapsed_time = time.time() - self.flow_accuracy_phase2_start_time
+        return elapsed_time >= FLOW_ACCURACY_PHASE2_DURATION
+    
+    def check_flow_accuracy_phase3_complete(self):
+        # Check if phase 3 duration has elapsed
+        if self.flow_accuracy_phase3_start_time is None:
+            return False
+        elapsed_time = time.time() - self.flow_accuracy_phase3_start_time
+        return elapsed_time >= FLOW_ACCURACY_PHASE3_DURATION
 
     def check_max_pressure_complete(self):
         # Check if frontend has acknowledged the pressure test completion
@@ -278,7 +313,10 @@ class SiaTestBenchApplication(Application):
         self.max_pressure_run_start_time = None
         self.max_flow_stabilise_start_time = None
         self.max_flow_run_start_time = None
-        self.flow_accuracy_run_start_time = None
+        self.flow_accuracy_stabilise_start_time = None
+        self.flow_accuracy_phase1_start_time = None
+        self.flow_accuracy_phase2_start_time = None
+        self.flow_accuracy_phase3_start_time = None
         # Reset confirmation flags
         self.shared_pressure_confirmation = False
         self.shared_flow_confirmation = False
@@ -290,6 +328,7 @@ class SiaTestBenchApplication(Application):
         # Reset target pressure and flow
         self.target_max_pressure = None
         self.target_max_flow = None
+        self.target_flow_accuracy = None
 
     async def check_state_changes(self, state: str):
         """Detect state changes and notify frontend of important transitions."""
@@ -315,7 +354,7 @@ class SiaTestBenchApplication(Application):
                 # Reset the acknowledgment flag for next test
                 self.shared_flow_complete_acknowledged = False
             
-            elif state == "flow_accuracy_end" and self.previous_state == "flow_accuracy_run":
+            elif state == "flow_accuracy_end" and self.previous_state == "flow_accuracy_phase3":
                 await self.server.push_test_complete({
                     'type': 'test_complete',
                     'test': 'flow_accuracy'
@@ -373,13 +412,46 @@ class SiaTestBenchApplication(Application):
                 'duration': MAX_FLOW_RUN_DURATION
             })
         
-        elif state == "flow_accuracy_run" and self.flow_accuracy_run_start_time is not None:
-            elapsed = time.time() - self.flow_accuracy_run_start_time
-            progress = min(100.0, (elapsed / FLOW_ACCURACY_TEST_DURATION) * 100.0)
+        elif state == "flow_accuracy_stabilise" and self.flow_accuracy_stabilise_start_time is not None:
+            elapsed = time.time() - self.flow_accuracy_stabilise_start_time
+            progress = min(100.0, (elapsed / FLOW_ACCURACY_STABILISE_DURATION) * 100.0)
             await self.server.push_test_progress({
                 'type': 'test_progress',
-                'test': 'flow_accuracy',
+                'test': 'flow_accuracy_stabilise',
                 'progress': progress,
                 'elapsed': elapsed,
-                'duration': FLOW_ACCURACY_TEST_DURATION
+                'duration': FLOW_ACCURACY_STABILISE_DURATION
+            })
+        
+        elif state == "flow_accuracy_phase1" and self.flow_accuracy_phase1_start_time is not None:
+            elapsed = time.time() - self.flow_accuracy_phase1_start_time
+            progress = min(100.0, (elapsed / FLOW_ACCURACY_PHASE1_DURATION) * 100.0)
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'flow_accuracy_phase1',
+                'progress': progress,
+                'elapsed': elapsed,
+                'duration': FLOW_ACCURACY_PHASE1_DURATION
+            })
+        
+        elif state == "flow_accuracy_phase2" and self.flow_accuracy_phase2_start_time is not None:
+            elapsed = time.time() - self.flow_accuracy_phase2_start_time
+            progress = min(100.0, (elapsed / FLOW_ACCURACY_PHASE2_DURATION) * 100.0)
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'flow_accuracy_phase2',
+                'progress': progress,
+                'elapsed': elapsed,
+                'duration': FLOW_ACCURACY_PHASE2_DURATION
+            })
+        
+        elif state == "flow_accuracy_phase3" and self.flow_accuracy_phase3_start_time is not None:
+            elapsed = time.time() - self.flow_accuracy_phase3_start_time
+            progress = min(100.0, (elapsed / FLOW_ACCURACY_PHASE3_DURATION) * 100.0)
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'flow_accuracy_phase3',
+                'progress': progress,
+                'elapsed': elapsed,
+                'duration': FLOW_ACCURACY_PHASE3_DURATION
             })

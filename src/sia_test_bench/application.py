@@ -18,9 +18,9 @@ MAX_PRESSURE_RUN_DURATION = 10.0
 MAX_FLOW_STABILISE_DURATION = 10.0
 MAX_FLOW_RUN_DURATION = 10.0
 FLOW_ACCURACY_STABILISE_DURATION = 10.0
-FLOW_ACCURACY_PHASE1_DURATION = 10.0
-FLOW_ACCURACY_PHASE2_DURATION = 10.0
-FLOW_ACCURACY_PHASE3_DURATION = 10.0
+FLOW_ACCURACY_PHASE1_DURATION = 30.0
+FLOW_ACCURACY_PHASE2_DURATION = 30.0
+FLOW_ACCURACY_PHASE3_DURATION = 30.0
 
 
 class SiaTestBenchApplication(Application):
@@ -53,6 +53,7 @@ class SiaTestBenchApplication(Application):
         self.current_flow: float = None
         self.target_max_flow: float = None
         self.target_flow_accuracy: float = None  # 20% of max pressure for flow accuracy verify
+        self.flow_accuracy_max_flow_rate: float = None  # Max flow rate for flow accuracy phases
 
     async def setup(self):
         """Initialize the state machine and web server."""
@@ -356,6 +357,7 @@ class SiaTestBenchApplication(Application):
         self.target_max_pressure = None
         self.target_max_flow = None
         self.target_flow_accuracy = None
+        self.flow_accuracy_max_flow_rate = None
 
     async def check_state_changes(self, state: str):
         """Detect state changes and notify frontend of important transitions."""

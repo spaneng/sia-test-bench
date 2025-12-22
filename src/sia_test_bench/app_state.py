@@ -12,17 +12,17 @@ class SiaTestBenchState:
         {"name": "auto_start"},
         {"name": "auto_stop"},
         {"name": "max_pressure_start", "on_enter": "stop_pump"},
-        {"name": "max_pressure_verify", "timeout": 30, "on_timeout": "init_max_pressure", "on_enter": "start_pump"},
+        {"name": "max_pressure_verify", "timeout": 30, "on_timeout": "on_timeout_max_pressure_verify", "on_enter": "start_pump"},
         {"name": "max_pressure_stabilise", "on_enter": "on_enter_max_pressure_stabilise"},
         {"name": "max_pressure_run", "on_enter": "on_enter_max_pressure_run", "on_exit": "stop_pump"},
         {"name": "max_pressure_end"},
         {"name": "max_flow_start", "on_enter": "stop_pump"},
-        {"name": "max_flow_verify", "timeout": 30, "on_timeout": "init_max_flow", "on_enter": "start_pump"},
+        {"name": "max_flow_verify", "timeout": 30, "on_timeout": "on_timeout_max_flow_verify", "on_enter": "start_pump"},
         {"name": "max_flow_stabilise", "on_enter": "on_enter_max_flow_stabilise"},
         {"name": "max_flow_run", "on_enter": "on_enter_max_flow_run", "on_exit": "stop_pump"},
         {"name": "max_flow_end"},
         {"name": "flow_accuracy_start", "on_enter": "stop_pump"},
-        {"name": "flow_accuracy_verify", "timeout": 30, "on_timeout": "init_flow_accuracy", "on_enter": "start_pump"},
+        {"name": "flow_accuracy_verify", "timeout": 30, "on_timeout": "on_timeout_flow_accuracy_verify", "on_enter": "start_pump"},
         {"name": "flow_accuracy_stabilise", "on_enter": "on_enter_flow_accuracy_stabilise"},
         {"name": "flow_accuracy_phase1", "on_enter": "on_enter_flow_accuracy_phase1"},
         {"name": "flow_accuracy_phase2", "on_enter": "on_enter_flow_accuracy_phase2"},
@@ -250,25 +250,58 @@ class SiaTestBenchState:
         log.info("Flow accuracy stabilise started - timer initiated")
 
     async def on_enter_flow_accuracy_phase1(self):
-        """Set the timer when entering flow_accuracy_phase1 state."""
+        """Set the timer and flow rate (10%) when entering flow_accuracy_phase1 state."""
         import time
         self.app.flow_accuracy_phase1_start_time = time.time()
-        log.info("Flow accuracy phase 1 started - timer initiated")
+        # Set flow rate to 10% of max
+        if self.app.flow_accuracy_max_flow_rate is not None:
+            target_flow = self.app.flow_accuracy_max_flow_rate * 0.10
+            await self.app.set_flow_rate(target_flow)
+            log.info(f"Flow accuracy phase 1 started - flow rate set to {target_flow} L/Hr (10%)")
+        else:
+            log.warning("Flow accuracy phase 1 started - max flow rate not set")
 
     async def on_enter_flow_accuracy_phase2(self):
-        """Set the timer when entering flow_accuracy_phase2 state."""
+        """Set the timer and flow rate (50%) when entering flow_accuracy_phase2 state."""
         import time
         self.app.flow_accuracy_phase2_start_time = time.time()
-        log.info("Flow accuracy phase 2 started - timer initiated")
+        # Set flow rate to 50% of max
+        if self.app.flow_accuracy_max_flow_rate is not None:
+            target_flow = self.app.flow_accuracy_max_flow_rate * 0.50
+            await self.app.set_flow_rate(target_flow)
+            log.info(f"Flow accuracy phase 2 started - flow rate set to {target_flow} L/Hr (50%)")
+        else:
+            log.warning("Flow accuracy phase 2 started - max flow rate not set")
 
     async def on_enter_flow_accuracy_phase3(self):
-        """Set the timer when entering flow_accuracy_phase3 state."""
+        """Set the timer and flow rate (100%) when entering flow_accuracy_phase3 state."""
         import time
         self.app.flow_accuracy_phase3_start_time = time.time()
-        log.info("Flow accuracy phase 3 started - timer initiated")
+        # Set flow rate to 100% of max
+        if self.app.flow_accuracy_max_flow_rate is not None:
+            target_flow = self.app.flow_accuracy_max_flow_rate * 1.00
+            await self.app.set_flow_rate(target_flow)
+            log.info(f"Flow accuracy phase 3 started - flow rate set to {target_flow} L/Hr (100%)")
+        else:
+            log.warning("Flow accuracy phase 3 started - max flow rate not set")
 
     async def on_enter_off(self):
         """Clean up when entering off state."""
         log.info("Entering off state - resetting test mode and timers")
         await self.stop_pump()
         self.app.clear_shared_testmode()
+
+    async def on_timeout_max_pressure_verify(self):
+        """Handle timeout for max_pressure_verify - go back to start."""
+        log.info("Max pressure verify timed out - returning to max_pressure_start")
+        await self.init_max_pressure()
+
+    async def on_timeout_max_flow_verify(self):
+        """Handle timeout for max_flow_verify - go back to start."""
+        log.info("Max flow verify timed out - returning to max_flow_start")
+        await self.init_max_flow()
+
+    async def on_timeout_flow_accuracy_verify(self):
+        """Handle timeout for flow_accuracy_verify - go back to start."""
+        log.info("Flow accuracy verify timed out - returning to flow_accuracy_start")
+        await self.init_flow_accuracy()

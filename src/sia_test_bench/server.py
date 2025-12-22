@@ -197,10 +197,15 @@ class TestBenchServer:
                 # Calculate 20% of max pressure as target (same as max_flow)
                 if self.application:
                     target_pressure = data.get('target_pressure')
+                    max_flow_rate = data.get('max_flow_rate')
                     if target_pressure is not None:
-                        # Use 20% of max pressure value as target
+                        # Use 20% of max pressure value as target for verification
                         self.application.target_flow_accuracy = target_pressure * 0.2
                         log.info(f"Flow accuracy target set to {self.application.target_flow_accuracy} (20% of {target_pressure})")
+                    if max_flow_rate is not None:
+                        # Store max flow rate for calculating phase targets (10%, 50%, 100%)
+                        self.application.flow_accuracy_max_flow_rate = float(max_flow_rate)
+                        log.info(f"Flow accuracy max flow rate set to {max_flow_rate} L/Hr")
                     self.application.shared_flow_accuracy_confirmation = True
                     log.info("Flow accuracy test confirmation received")
             elif command == 'acknowledge_pressure_complete':

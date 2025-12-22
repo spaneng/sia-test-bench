@@ -8,7 +8,6 @@ export function ControlPlane() {
     availablePumps,
     isLoadingPumps,
     pumpState,
-    isRunning,
     connectionStatus,
     currentTestView,
     stateMachineState,
@@ -460,11 +459,12 @@ export function ControlPlane() {
       setFlowAccuracyConfirmed(true);
       setFlowAccuracyVerifying(true);
       setIsTestRunning(true);
-      // Send confirmation to backend with target pressure (for calculating 20% as target)
+      // Send confirmation to backend with target pressure and max flow rate
       sendMessage({ 
         type: 'test', 
         command: 'confirm_flow_accuracy_test',
-        target_pressure: selectedPump?.maxPressure
+        target_pressure: selectedPump?.maxPressure,
+        max_flow_rate: selectedPump?.maxFlowRate
       });
       // State machine will handle verification - no setTimeout needed
     }
@@ -866,7 +866,7 @@ export function ControlPlane() {
                           <p className="confirmation-message">
                             Please confirm the valves and relief have been set.
                             <br />
-                            Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.
+                            <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.</strong>
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -945,7 +945,7 @@ export function ControlPlane() {
                           <p className="confirmation-message">
                             Please confirm the valves and relief have been set.
                             <br />
-                            Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
+                            <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -1024,7 +1024,7 @@ export function ControlPlane() {
                           <p className="confirmation-message">
                             Please confirm the valves and relief have been set.
                             <br />
-                            Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
+                            <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                           </p>
                           <button
                             className="btn btn-primary btn-confirm"
@@ -1054,15 +1054,15 @@ export function ControlPlane() {
                         </div>
                       ) : stateMachineState === 'flow_accuracy_phase1' ? (
                         <div className="test-run-section">
-                          <p className="test-run-message">Phase 1...</p>
+                          <p className="test-run-message">10% Flow Rate...</p>
                         </div>
                       ) : stateMachineState === 'flow_accuracy_phase2' ? (
                         <div className="test-run-section">
-                          <p className="test-run-message">Phase 2...</p>
+                          <p className="test-run-message">50% Flow Rate...</p>
                         </div>
                       ) : stateMachineState === 'flow_accuracy_phase3' ? (
                         <div className="test-run-section">
-                          <p className="test-run-message">Phase 3...</p>
+                          <p className="test-run-message">100% Flow Rate...</p>
                         </div>
                       ) : (
                         <div className="test-run-section">
@@ -1142,7 +1142,7 @@ export function ControlPlane() {
                       <p className="confirmation-message">
                         Please confirm the valves and relief have been set.
                         <br />
-                        Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.
+                        <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure || 'N/A'} PSI.</strong>
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -1219,7 +1219,7 @@ export function ControlPlane() {
                       <p className="confirmation-message">
                         Please confirm the valves and relief have been set.
                         <br />
-                        Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
+                        <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -1297,7 +1297,7 @@ export function ControlPlane() {
                       <p className="confirmation-message">
                         Please confirm the valves and relief have been set.
                         <br />
-                        Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).
+                        <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
                       </p>
                       <button
                         className="btn btn-primary btn-confirm"
@@ -1327,15 +1327,15 @@ export function ControlPlane() {
                     </div>
                   ) : stateMachineState === 'flow_accuracy_phase1' ? (
                     <div className="test-run-section">
-                      <p className="test-run-message">Phase 1...</p>
+                      <p className="test-run-message">10% Flow Rate...</p>
                     </div>
                   ) : stateMachineState === 'flow_accuracy_phase2' ? (
                     <div className="test-run-section">
-                      <p className="test-run-message">Phase 2...</p>
+                      <p className="test-run-message">50% Flow Rate...</p>
                     </div>
                   ) : stateMachineState === 'flow_accuracy_phase3' ? (
                     <div className="test-run-section">
-                      <p className="test-run-message">Phase 3...</p>
+                      <p className="test-run-message">100% Flow Rate...</p>
                     </div>
                   ) : (
                     <div className="test-run-section">

@@ -85,6 +85,38 @@ export interface TestBenchState {
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8092';
 // const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.host}`;
 
+const MOCK_PUMPS: PumpType[] = [
+  { 
+    id: '1', 
+    name: 'SIA Pump Model A', 
+    model: 'Model A',
+    maxRPM: 3000,
+    maxFlowRate: 50,
+    maxPressure: 100,
+    currentDraw: 5.5,
+    strokeLength: 2.5
+  },
+  { 
+    id: '2', 
+    name: 'SIA Pump Model B', 
+    model: 'Model B',
+    maxRPM: 3500,
+    maxFlowRate: 75,
+    maxPressure: 120,
+    currentDraw: 7.2,
+    strokeLength: 3.0
+  },
+  { 
+    id: '3', 
+    name: 'SIA Pump Model C', 
+    model: 'Model C',
+    maxRPM: 4000,
+    maxFlowRate: 100,
+    maxPressure: 150,
+    currentDraw: 9.5,
+    strokeLength: 3.5
+  },
+];
 
 export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   // Initial state
@@ -183,84 +215,17 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   fetchAvailablePumps: async () => {
     set({ isLoadingPumps: true });
     try {
-      // TODO: Replace with actual API endpoint
       const response = await fetch(`${API_URL}/api/pumps`);
       if (response.ok) {
         const pumps = await response.json();
         set({ availablePumps: pumps, isLoadingPumps: false });
-      } else {
-        // Fallback to mock data if API is not available
-        const mockPumps: PumpType[] = [
-          { 
-            id: '1', 
-            name: 'SIA Pump Model A', 
-            model: 'Model A',
-            maxRPM: 3000,
-            maxFlowRate: 50,
-            maxPressure: 100,
-            currentDraw: 5.5,
-            strokeLength: 2.5
-          },
-          { 
-            id: '2', 
-            name: 'SIA Pump Model B', 
-            model: 'Model B',
-            maxRPM: 3500,
-            maxFlowRate: 75,
-            maxPressure: 120,
-            currentDraw: 7.2,
-            strokeLength: 3.0
-          },
-          { 
-            id: '3', 
-            name: 'SIA Pump Model C', 
-            model: 'Model C',
-            maxRPM: 4000,
-            maxFlowRate: 100,
-            maxPressure: 150,
-            currentDraw: 9.5,
-            strokeLength: 3.5
-          },
-        ];
-        set({ availablePumps: mockPumps, isLoadingPumps: false });
+        return;
       }
     } catch (error) {
       console.error('Failed to fetch pumps:', error);
-      // Fallback to mock data
-      const mockPumps: PumpType[] = [
-        { 
-          id: '1', 
-          name: 'SIA Pump Model A', 
-          model: 'Model A',
-          maxRPM: 3000,
-          maxFlowRate: 50,
-          maxPressure: 100,
-          currentDraw: 5.5,
-          strokeLength: 2.5
-        },
-        { 
-          id: '2', 
-          name: 'SIA Pump Model B', 
-          model: 'Model B',
-          maxRPM: 3500,
-          maxFlowRate: 75,
-          maxPressure: 120,
-          currentDraw: 7.2,
-          strokeLength: 3.0
-        },
-        { 
-          id: '3', 
-          name: 'SIA Pump Model C', 
-          model: 'Model C',
-          maxRPM: 4000,
-          maxFlowRate: 100,
-          maxPressure: 150,
-          currentDraw: 9.5,
-          strokeLength: 3.5
-        },
-      ];
-      set({ availablePumps: mockPumps, isLoadingPumps: false });
     }
+    // Fallback to mock data if API is not available or fails
+    set({ availablePumps: MOCK_PUMPS, isLoadingPumps: false });
   },
   
   // Control actions

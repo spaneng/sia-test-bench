@@ -63,6 +63,15 @@ export function useWebSocket() {
                 ...data,
               };
               addDataPoint(pumpData);
+
+              // Update pumpState if provided in data message
+              if (data.pumpState !== undefined && typeof data.pumpState === 'string') {
+                const state = data.pumpState.toLowerCase();
+                // Ensure it matches expected type
+                if (state === 'on' || state === 'off' || state === 'warning_disabled') {
+                  setPumpState(state as 'off' | 'on' | 'warning_disabled');
+                }
+              }
             } else if (data.type === 'state') {
               setPumpState(data.state);
               if (data.targetFlow !== undefined) {

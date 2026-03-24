@@ -40,7 +40,8 @@ def render_test_chart_png(
     time_series: List[float],
     flow_lpm: List[float],
     pressure_kpa: List[float],
-    figure_size: tuple = (8.27, 5.85)  # A4 landscape aspect ratio
+    figure_size: tuple = (8.27, 5.85),  # A4 landscape aspect ratio
+    test_name: Optional[str] = None
 ) -> bytes:
     """
     Render a test chart as PNG bytes with dual Y-axes.
@@ -50,6 +51,7 @@ def render_test_chart_png(
         flow_lpm: Flow rate series in L/min
         pressure_kpa: Pressure series in kPa
         figure_size: Tuple of (width, height) in inches (default: A4 landscape)
+        test_name: Optional test name to include in the title
     
     Returns:
         PNG image bytes
@@ -73,8 +75,12 @@ def render_test_chart_png(
     line2 = ax2.plot(time_series, pressure_kpa, color=color_pressure, linewidth=1.5, label='Pressure')
     ax2.tick_params(axis='y', labelcolor=color_pressure)
     
-    # Add title
-    ax1.set_title('Pump Test Results', fontweight='bold', pad=15)
+    # Add title with test name if provided
+    if test_name:
+        title = f'{test_name} Results'
+    else:
+        title = 'Pump Test Results'
+    ax1.set_title(title, fontweight='bold', pad=15)
     
     # Add legend
     lines = line1 + line2

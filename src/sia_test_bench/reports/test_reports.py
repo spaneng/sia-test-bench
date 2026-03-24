@@ -6,7 +6,7 @@ It wraps the existing reporting.py functions and adapts the data format.
 import logging
 from typing import List, Dict, Any
 
-from sia_test_bench.reporting import render_test_chart_png as _render_chart, generate_report_pdf as _generate_pdf
+from .reporting import render_test_chart_png as _render_chart, generate_report_pdf as _generate_pdf
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ def normalize_pump_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize pump metadata fields to ensure consistent structure.
     
     Maps frontend field names to standardized backend field names:
-    - pump_serial -> serial (also preserved as pump_serial for compatibility)
+    - pump_serial -> serial, serial_number (also preserved as pump_serial for compatibility)
     - pump_model -> model (also preserved as pump_model for compatibility)
     - pump_name -> name (also preserved as pump_name for compatibility)
     
@@ -31,10 +31,13 @@ def normalize_pump_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     
     # Map common field name variations to standardized names
     # Frontend sends: pump_serial, pump_model, pump_name
-    # Template may expect: serial, model, name (or vice versa)
-    # We provide both for compatibility
-    if 'pump_serial' in normalized and 'serial' not in normalized:
-        normalized['serial'] = normalized['pump_serial']
+    # Template may expect: serial, serial_number, model, name (or vice versa)
+    # We provide all variations for compatibility
+    if 'pump_serial' in normalized:
+        if 'serial' not in normalized:
+            normalized['serial'] = normalized['pump_serial']
+        if 'serial_number' not in normalized:
+            normalized['serial_number'] = normalized['pump_serial']
     if 'pump_model' in normalized and 'model' not in normalized:
         normalized['model'] = normalized['pump_model']
     if 'pump_name' in normalized and 'name' not in normalized:
@@ -43,6 +46,13 @@ def normalize_pump_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     # Also ensure reverse mapping for templates expecting pump_* prefix
     if 'serial' in normalized and 'pump_serial' not in normalized:
         normalized['pump_serial'] = normalized['serial']
+        if 'serial_number' not in normalized:
+            normalized['serial_number'] = normalized['serial']
+    if 'serial_number' in normalized:
+        if 'serial' not in normalized:
+            normalized['serial'] = normalized['serial_number']
+        if 'pump_serial' not in normalized:
+            normalized['pump_serial'] = normalized['serial_number']
     if 'model' in normalized and 'pump_model' not in normalized:
         normalized['pump_model'] = normalized['model']
     if 'name' in normalized and 'pump_name' not in normalized:
@@ -51,7 +61,7 @@ def normalize_pump_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def render_test_chart_png(series: List[Dict[str, Any]]) -> bytes:
+def render_test_chart_png(series: List[Dict[str, Any]], test_name: str = None) -> bytes:
     """Render a test chart as PNG bytes.
     
     Args:
@@ -60,6 +70,7 @@ def render_test_chart_png(series: List[Dict[str, Any]]) -> bytes:
             - pressure: Optional[float] (pressure in PSI)
             - flowRate: Optional[float] (flow rate in L/Hr)
             - Other optional fields
+        test_name: Optional test name to include in the chart title
             
     Returns:
         PNG image bytes
@@ -97,8 +108,8 @@ def render_test_chart_png(series: List[Dict[str, Any]]) -> bytes:
         else:
             pressure_kpa.append(0.0)
     
-    # Call the existing chart rendering function
-    return _render_chart(time_series, flow_lpm, pressure_kpa)
+    # Call the existing chart rendering function with test name
+    return _render_chart(time_series, flow_lpm, pressure_kpa, test_name=test_name)
 
 
 def generate_report_pdf(test_record: Dict[str, Any], chart_png_bytes: bytes) -> bytes:

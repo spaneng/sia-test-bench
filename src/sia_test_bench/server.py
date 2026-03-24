@@ -14,7 +14,7 @@ from aiohttp.web_runner import AppRunner, TCPSite
 from sia_test_bench.app_state import SiaTestBenchState
 from sia_test_bench.test_persistence import TestPersistence
 from sia_test_bench.test_validation import validate_test_data, compute_test_metrics
-from sia_test_bench.test_reports import render_test_chart_png, generate_report_pdf
+from sia_test_bench.reports.test_reports import render_test_chart_png, generate_report_pdf
 
 log = logging.getLogger()
 
@@ -460,10 +460,23 @@ class TestBenchServer:
                     status=500
                 )
             
+            # Extract test name from test_id (format: "test-type-timestamp")
+            test_name = None
+            if test_id and '-' in test_id:
+                # Get all parts except last (timestamp) using rsplit
+                if test_type_str := test_id.rsplit('-', 1)[0]:
+                    # Convert test type to readable name
+                    test_name_map = {
+                        'max-pressure': 'Max Pressure Test',
+                        'max-flow': 'Max Flow Test',
+                        'flow-accuracy': 'Flow Accuracy Test',
+                    }
+                    test_name = test_name_map.get(test_type_str, test_type_str.replace('-', ' ').title() + ' Test')
+            
             # Generate chart PNG asynchronously with timeout
             try:
                 chart_png_bytes = await asyncio.wait_for(
-                    asyncio.to_thread(render_test_chart_png, series),
+                    asyncio.to_thread(render_test_chart_png, series, test_name),
                     timeout=60.0  # 60 second timeout for chart generation
                 )
             except asyncio.TimeoutError:

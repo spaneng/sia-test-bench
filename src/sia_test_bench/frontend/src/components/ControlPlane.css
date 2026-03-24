@@ -855,6 +855,29 @@
   color: #ef4444;
 }
 
+/* Test Timestamps */
+.test-timestamps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.timestamp-info {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.timestamp-label {
+  font-weight: 600;
+  color: #374151;
+  margin-right: 0.5rem;
+}
+
 /* Loading Spinner */
 .loading-spinner {
   width: 48px;

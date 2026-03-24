@@ -20,6 +20,6 @@ services:
     #   - device_agent
     #   - sample_simulator
     environment:
-      # - APP_KEY=test_app_key
+      - APP_KEY=test_app_key
       - CONFIG_FP=/app/simulators/app_config.json
-      - DDA_URI=192.168.1.71:50051
+      # - DDA_URI=192.168.50.10:50051

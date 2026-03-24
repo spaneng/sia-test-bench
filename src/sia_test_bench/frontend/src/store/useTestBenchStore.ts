@@ -18,6 +18,7 @@ export interface PumpType {
   id: string;
   name: string;
   model?: string;
+  serialNumber?: string;
   maxRPM?: number;
   maxFlowRate?: number;
   maxPressure?: number;
@@ -67,6 +68,10 @@ export interface TestBenchState {
   reportUrl: string | null;
   currentTestId: string | null;
   
+  // Test timing
+  testStartTimestamp: number | null;
+  testEndTimestamp: number | null;
+  
   // Actions
   setConnectionStatus: (status: TestBenchState['connectionStatus']) => void;
   setPumpState: (state: TestBenchState['pumpState']) => void;
@@ -91,6 +96,10 @@ export interface TestBenchState {
   // Report generation
   finalizeTestAndGenerateReport: (testId: string) => Promise<void>;
   clearReportState: () => void;
+  
+  // Test timing
+  setTestStartTimestamp: (timestamp: number | null) => void;
+  setTestEndTimestamp: (timestamp: number | null) => void;
 }
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8092';
@@ -158,6 +167,8 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   reportError: null,
   reportUrl: null,
   currentTestId: null,
+  testStartTimestamp: null,
+  testEndTimestamp: null,
   
   // Setters
   setConnectionStatus: (status) => set({ 
@@ -302,7 +313,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   // Report generation
   finalizeTestAndGenerateReport: async (testId: string) => {
     const state = get();
-    const { selectedPump, dataHistory } = state;
+    const { selectedPump, dataHistory, testStartTimestamp, testEndTimestamp } = state;
     
     if (!selectedPump) {
       set({ reportError: 'No pump selected' });
@@ -314,12 +325,31 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       return;
     }
     
+    // Filter dataHistory to only include data from test start to test end
+    let filteredDataHistory = dataHistory;
+    if (testStartTimestamp !== null && testEndTimestamp !== null) {
+      filteredDataHistory = dataHistory.filter(data => {
+        if (data.timestamp === undefined) return false;
+        // Check if timestamp is in milliseconds (greater than year 2000 timestamp in milliseconds)
+        const isMilliseconds = data.timestamp > 946684800000;
+        const dataTimestamp = isMilliseconds ? data.timestamp : data.timestamp * 1000;
+        const startTs = testStartTimestamp > 946684800000 ? testStartTimestamp : testStartTimestamp * 1000;
+        const endTs = testEndTimestamp > 946684800000 ? testEndTimestamp : testEndTimestamp * 1000;
+        return dataTimestamp >= startTs && dataTimestamp <= endTs;
+      });
+      
+      if (filteredDataHistory.length === 0) {
+        set({ reportError: 'No test data available within test timeframe' });
+        return;
+      }
+    }
+    
     // Set loading state
     set({ isLoadingReport: true, reportError: null, reportUrl: null, currentTestId: testId });
     
     try {
-      // Extract timestamps and determine start/end
-      const timestamps = dataHistory.map(d => d.timestamp).filter((ts): ts is number => ts !== undefined);
+      // Extract timestamps and determine start/end from filtered data
+      const timestamps = filteredDataHistory.map(d => d.timestamp).filter((ts): ts is number => ts !== undefined);
       if (timestamps.length === 0) {
         throw new Error('No valid timestamps in test data');
       }
@@ -330,7 +360,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       // Prepare series data - convert timestamps from milliseconds to seconds if needed
       // Check if timestamps are in milliseconds (greater than year 2000 timestamp in milliseconds)
       const isMilliseconds = startTimestamp > 946684800000; // Year 2000 in milliseconds (Unix: 946684800 seconds)
-      const series = dataHistory.map(data => ({
+      const series = filteredDataHistory.map(data => ({
         timestamp: isMilliseconds ? data.timestamp / 1000 : data.timestamp,
         pressure: data.pressure,
         flowRate: data.flowRate,
@@ -345,7 +375,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
       
       // Prepare metadata
       const metadata = {
-        pump_serial: selectedPump.id, // Use ID as serial placeholder
+        pump_serial: selectedPump.serialNumber || selectedPump.id, // Use serialNumber if available, otherwise ID as fallback
         pump_model: selectedPump.model || selectedPump.name,
         operator: '', // Placeholder - can be enhanced later
         site: '', // Placeholder - can be enhanced later
@@ -403,5 +433,9 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
     reportUrl: null, 
     currentTestId: null 
   }),
+  
+  // Test timing setters
+  setTestStartTimestamp: (timestamp) => set({ testStartTimestamp: timestamp }),
+  setTestEndTimestamp: (timestamp) => set({ testEndTimestamp: timestamp }),
 }));
 

@@ -36,6 +36,9 @@ export function ControlPlane() {
     sendMessage,
     finalizeTestAndGenerateReport,
     clearReportState,
+    setTestStartTimestamp,
+    setTestEndTimestamp,
+    dataHistory,
   } = useTestBenchStore();
 
   const [isExiting, setIsExiting] = useState(false);
@@ -66,6 +69,7 @@ export function ControlPlane() {
   const [editablePumpData, setEditablePumpData] = useState<{
     name: string;
     model?: string;
+    serialNumber?: string;
     maxRPM?: number;
     maxFlowRate?: number;
     maxPressure?: number;
@@ -73,10 +77,77 @@ export function ControlPlane() {
     strokeLength?: number;
   } | null>(null);
   const hasInitializedPumpInfo = useRef<string | null>(null);
+  const downloadedReportUrl = useRef<string | null>(null);
 
   useEffect(() => {
     fetchAvailablePumps();
   }, [fetchAvailablePumps]);
+
+  // Automatically download report when it becomes available
+  useEffect(() => {
+    // Reset ref when reportUrl is cleared (new report generation started)
+    if (!reportUrl) {
+      downloadedReportUrl.current = null;
+      return;
+    }
+    
+    // Download if we haven't downloaded this URL yet
+    if (reportUrl !== downloadedReportUrl.current) {
+      downloadedReportUrl.current = reportUrl;
+      
+      // Create a temporary anchor element and trigger download
+      const link = document.createElement('a');
+      link.href = reportUrl;
+      link.download = ''; // Let browser determine filename from Content-Disposition header
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }, [reportUrl]);
+
+  // Track test start/end timestamps based on state machine state
+  useEffect(() => {
+    // Test start states - when we enter stabilise phase (actual test data collection begins)
+    const isStabiliseState = stateMachineState === 'max_pressure_stabilise' || 
+                             stateMachineState === 'max_flow_stabilise' || 
+                             stateMachineState === 'flow_accuracy_stabilise';
+    
+    if (isStabiliseState) {
+      // Use the latest data point's timestamp when entering stabilise phase
+      // This marks when the test actually starts collecting data
+      if (dataHistory.length > 0 && dataHistory[dataHistory.length - 1]?.timestamp) {
+        const latestTimestamp = dataHistory[dataHistory.length - 1].timestamp;
+        setTestStartTimestamp(latestTimestamp);
+      } else {
+        // If no data yet, use current time
+        setTestStartTimestamp(Date.now());
+      }
+    }
+    
+    // Test end states
+    const isEndState = stateMachineState === 'max_pressure_end' || 
+                       stateMachineState === 'max_flow_end' || 
+                       stateMachineState === 'flow_accuracy_end';
+    
+    if (isEndState && dataHistory.length > 0 && dataHistory[dataHistory.length - 1]?.timestamp) {
+      // Use the latest data point's timestamp when entering end phase
+      const lastTimestamp = dataHistory[dataHistory.length - 1].timestamp;
+      setTestEndTimestamp(lastTimestamp);
+    }
+    
+    // Reset timestamps when leaving test states or starting a new test
+    if (stateMachineState === 'off' || 
+        stateMachineState === 'auto_start' || 
+        stateMachineState === 'auto_stop' ||
+        stateMachineState === 'max_pressure_start' ||
+        stateMachineState === 'max_flow_start' ||
+        stateMachineState === 'flow_accuracy_start') {
+      setTestStartTimestamp(null);
+      setTestEndTimestamp(null);
+    }
+  }, [stateMachineState, dataHistory, setTestStartTimestamp, setTestEndTimestamp]);
 
   // Watch state machine for max pressure verification/stabilization outcomes
   useEffect(() => {
@@ -180,79 +251,72 @@ export function ControlPlane() {
     }
   }, [stateMachineState, flowAccuracyVerifying, flowAccuracyStabilising]);
 
-  // Handle test completion - auto-return to test selection after 3 seconds (only in standalone mode)
+  // Handle test completion - stay in end state until report generation is successful
   useEffect(() => {
-    if (maxPressureComplete) {
-      const timer = setTimeout(() => {
-        // Notify backend that frontend has finished showing completion message
-        sendMessage({ type: 'test', command: 'acknowledge_pressure_complete' });
-        
-        // Only reset to 'none' if not in auto mode
-        if (currentTestView === 'max_pressure') {
-          setCurrentTestView('none');
-          resetTestProgress();
-          setIsTestRunning(false);
-        }
-        
-        // Reset test-specific flags
-        setMaxPressureConfirmed(false);
-        setMaxPressureVerifying(false);
-        setMaxPressureVerified(false);
-      }, 3000);
-      return () => clearTimeout(timer);
+    if (maxPressureComplete && reportUrl) {
+      // Only reset to 'none' after report has been successfully generated
+      // Notify backend that frontend has finished showing completion message
+      sendMessage({ type: 'test', command: 'acknowledge_pressure_complete' });
+      
+      if (currentTestView === 'max_pressure') {
+        setCurrentTestView('none');
+        resetTestProgress();
+        setIsTestRunning(false);
+      }
+      
+      // Reset test-specific flags
+      setMaxPressureConfirmed(false);
+      setMaxPressureVerifying(false);
+      setMaxPressureVerified(false);
     }
-  }, [maxPressureComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
+  }, [maxPressureComplete, reportUrl, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
 
+  // Handle max flow test completion - stay in end state until report generation is successful
   useEffect(() => {
-    if (maxFlowComplete) {
-      const timer = setTimeout(() => {
-        // Notify backend that frontend has finished showing completion message
-        sendMessage({ type: 'test', command: 'acknowledge_flow_complete' });
-        
-        // Only reset to 'none' if not in auto mode
-        if (currentTestView === 'max_flow') {
-          setCurrentTestView('none');
-          resetTestProgress();
-          setIsTestRunning(false);
-        }
-        
-        // Reset test-specific flags
-        setMaxFlowConfirmed(false);
-        setMaxFlowVerifying(false);
-        setMaxFlowVerified(false);
-      }, 3000);
-      return () => clearTimeout(timer);
+    if (maxFlowComplete && reportUrl) {
+      // Only reset to 'none' after report has been successfully generated
+      // Notify backend that frontend has finished showing completion message
+      sendMessage({ type: 'test', command: 'acknowledge_flow_complete' });
+      
+      if (currentTestView === 'max_flow') {
+        setCurrentTestView('none');
+        resetTestProgress();
+        setIsTestRunning(false);
+      }
+      
+      // Reset test-specific flags
+      setMaxFlowConfirmed(false);
+      setMaxFlowVerifying(false);
+      setMaxFlowVerified(false);
     }
-  }, [maxFlowComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
+  }, [maxFlowComplete, reportUrl, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
 
+  // Handle flow accuracy test completion - stay in end state until report generation is successful
   useEffect(() => {
-    if (flowAccuracyComplete) {
-      const timer = setTimeout(() => {
-        // Notify backend that frontend has finished showing completion message
-        sendMessage({ type: 'test', command: 'acknowledge_flow_accuracy_complete' });
-        
-        // Only reset to 'none' if not in auto mode
-        if (currentTestView === 'flow_accuracy') {
-          setCurrentTestView('none');
-          resetTestProgress();
-          setIsTestRunning(false);
-        } else if (currentTestView === 'auto') {
-          // In auto mode, after flow accuracy completes, return to test selection
-          setCurrentTestView('none');
-          resetTestProgress();
-          setIsTestRunning(false);
-        }
-        
-        // Reset test-specific flags
-        setFlowAccuracyConfirmed(false);
-        setFlowAccuracyVerifying(false);
-        setFlowAccuracyVerified(false);
-        setFlowAccuracyFailed(false);
-        setFlowAccuracyStabilising(false);
-      }, 3000);
-      return () => clearTimeout(timer);
+    if (flowAccuracyComplete && reportUrl) {
+      // Only reset to 'none' after report has been successfully generated
+      // Notify backend that frontend has finished showing completion message
+      sendMessage({ type: 'test', command: 'acknowledge_flow_accuracy_complete' });
+      
+      if (currentTestView === 'flow_accuracy') {
+        setCurrentTestView('none');
+        resetTestProgress();
+        setIsTestRunning(false);
+      } else if (currentTestView === 'auto') {
+        // In auto mode, after flow accuracy completes, return to test selection
+        setCurrentTestView('none');
+        resetTestProgress();
+        setIsTestRunning(false);
+      }
+      
+      // Reset test-specific flags
+      setFlowAccuracyConfirmed(false);
+      setFlowAccuracyVerifying(false);
+      setFlowAccuracyVerified(false);
+      setFlowAccuracyFailed(false);
+      setFlowAccuracyStabilising(false);
     }
-  }, [flowAccuracyComplete, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
+  }, [flowAccuracyComplete, reportUrl, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
 
   // Show pump info view when a pump is first selected
   useEffect(() => {
@@ -264,6 +328,7 @@ export function ControlPlane() {
         setEditablePumpData({
           name: selectedPump.name || '',
           model: selectedPump.model,
+          serialNumber: selectedPump.serialNumber,
           maxRPM: selectedPump.maxRPM,
           maxFlowRate: selectedPump.maxFlowRate,
           maxPressure: selectedPump.maxPressure,
@@ -509,6 +574,7 @@ export function ControlPlane() {
       const params = {
         name: editablePumpData.name,
         model: editablePumpData.model,
+        serial_number: editablePumpData.serialNumber,
         max_rpm: editablePumpData.maxRPM,
         max_flow_rate: editablePumpData.maxFlowRate,
         max_pressure: editablePumpData.maxPressure,
@@ -531,7 +597,7 @@ export function ControlPlane() {
     
     setEditablePumpData({
       ...editablePumpData,
-      [field]: value === '' ? undefined : (typeof value === 'string' && field !== 'name' && field !== 'model' ? parseFloat(value) || undefined : value),
+      [field]: value === '' ? undefined : (typeof value === 'string' && field !== 'name' && field !== 'model' && field !== 'serialNumber' ? parseFloat(value) || undefined : value),
     });
   };
 
@@ -702,6 +768,18 @@ export function ControlPlane() {
               value={editablePumpData.model || ''}
               onChange={(e) => handlePumpDataChange('model', e.target.value)}
               placeholder="Enter model"
+            />
+          </div>
+          
+          <div className="pump-info-form-group">
+            <label htmlFor="pump-serial-number" className="pump-info-form-label">Serial Number:</label>
+            <input
+              id="pump-serial-number"
+              type="text"
+              className="pump-info-form-input"
+              value={editablePumpData.serialNumber || ''}
+              onChange={(e) => handlePumpDataChange('serialNumber', e.target.value)}
+              placeholder="Enter serial number"
             />
           </div>
           

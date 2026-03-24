@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-from urllib.parse import non_hierarchical
 
 from pydoover.docker import Application
 
@@ -24,40 +23,36 @@ FLOW_ACCURACY_PHASE3_DURATION = 30.0
 
 
 class SiaTestBenchApplication(Application):
-    config: SiaTestBenchConfig  # not necessary, but helps your IDE provide autocomplete!
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.started: float = time.time()
-        self.state: SiaTestBenchState = None
-        self.server: TestBenchServer = None
-        self.previous_data: dict = None
-        self.shared_testmode = "off"
-        self.max_pressure_stabilise_start_time: float = None
-        self.max_pressure_run_start_time: float = None
-        self.max_flow_stabilise_start_time: float = None
-        self.max_flow_run_start_time: float = None
-        self.flow_accuracy_stabilise_start_time: float = None
-        self.flow_accuracy_phase1_start_time: float = None
-        self.flow_accuracy_phase2_start_time: float = None
-        self.flow_accuracy_phase3_start_time: float = None
-        self.shared_pressure_confirmation: bool = False
-        self.shared_flow_confirmation: bool = False
-        self.shared_flow_accuracy_confirmation: bool = False
-        self.shared_pressure_complete_acknowledged: bool = False
-        self.shared_flow_complete_acknowledged: bool = False
-        self.shared_flow_accuracy_complete_acknowledged: bool = False
-        self.previous_state: str = None
-        self.current_pressure: float = None
-        self.target_max_pressure: float = None
-        self.current_flow: float = None
-        self.target_max_flow: float = None
-        self.target_flow_accuracy: float = None  # 20% of max pressure for flow accuracy verify
-        self.flow_accuracy_max_flow_rate: float = None  # Max flow rate for flow accuracy phases
+    config_cls = SiaTestBenchConfig
 
     async def setup(self):
-        """Initialize the state machine and web server."""
-        
+        self.started = time.time()
+        self.state = None
+        self.server = None
+        self.previous_data = None
+        self.shared_testmode = "off"
+        self.max_pressure_stabilise_start_time = None
+        self.max_pressure_run_start_time = None
+        self.max_flow_stabilise_start_time = None
+        self.max_flow_run_start_time = None
+        self.flow_accuracy_stabilise_start_time = None
+        self.flow_accuracy_phase1_start_time = None
+        self.flow_accuracy_phase2_start_time = None
+        self.flow_accuracy_phase3_start_time = None
+        self.shared_pressure_confirmation = False
+        self.shared_flow_confirmation = False
+        self.shared_flow_accuracy_confirmation = False
+        self.shared_pressure_complete_acknowledged = False
+        self.shared_flow_complete_acknowledged = False
+        self.shared_flow_accuracy_complete_acknowledged = False
+        self.previous_state = None
+        self.current_pressure = None
+        self.target_max_pressure = None
+        self.current_flow = None
+        self.target_max_flow = None
+        self.target_flow_accuracy = None
+        self.flow_accuracy_max_flow_rate = None
+
         deployment_config = await self.get_channel_aggregate("deployment_config")
         pump_control_config = deployment_config.get("applications").get(self.config.pump_controller.value)
         pump_size = pump_control_config.get("pump_size").replace("/","_")

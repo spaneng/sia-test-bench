@@ -53,7 +53,8 @@ class SiaTestBenchApplication(Application):
         self.target_flow_accuracy = None
         self.flow_accuracy_max_flow_rate = None
 
-        deployment_config = await self.fetch_channel_aggregate("deployment_config")
+        config_agg = await self.device_agent.fetch_channel_aggregate("deployment_config")
+        deployment_config = config_agg.data
         pump_control_config = deployment_config.get("applications").get(self.config.pump_controller.value)
         pump_size = pump_control_config.get("pump_size").replace("/","_")
         self.pump_controller_pump = PumpType[pump_size]

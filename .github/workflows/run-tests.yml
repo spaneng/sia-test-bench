@@ -12,7 +12,12 @@ jobs:
 
     steps:
       - name: Install git
-        run: apt-get update && apt-get install -y git
+        run: apt-get update && apt-get install -y git libpango-1.0-0 libharfbuzz0b \
+          libpangoft2-1.0-0 \
+          libcairo2 \
+          libgdk-pixbuf2.0-0 \
+          libglib2.0-0 \
+          shared-mime-info 
 
       - uses: actions/checkout@v4
 

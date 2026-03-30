@@ -16,48 +16,58 @@
         "config_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "",
-            "title": "Application Config",
+            "title": "$default",
             "type": "object",
             "properties": {
                 "pump_controller_app": {
-                    "format": "doover-application",
                     "title": "Pump Controller App",
                     "x-name": "pump_controller_app",
                     "x-hidden": false,
+                    "format": "doover-resource-application",
                     "type": "string",
-                    "description": "The pump 1 application"
+                    "x-required": true,
+                    "description": "The pump 1 application",
+                    "x-position": 0
                 },
                 "tank_level_app": {
-                    "format": "doover-application",
                     "title": "Tank Level App",
                     "x-name": "tank_level_app",
                     "x-hidden": false,
+                    "format": "doover-resource-application",
                     "type": "string",
-                    "description": "The tank level application"
+                    "x-required": true,
+                    "description": "The tank level application",
+                    "x-position": 1
                 },
                 "pressure_app": {
-                    "format": "doover-application",
                     "title": "Pressure App",
                     "x-name": "pressure_app",
                     "x-hidden": false,
+                    "format": "doover-resource-application",
                     "type": "string",
-                    "description": "The pressure sensor application"
+                    "x-required": true,
+                    "description": "The pressure sensor application",
+                    "x-position": 2
                 },
                 "flow_meter_sensor_app": {
-                    "format": "doover-application",
                     "title": "Flow Meter Sensor App",
                     "x-name": "flow_meter_sensor_app",
                     "x-hidden": false,
+                    "format": "doover-resource-application",
                     "type": "string",
-                    "description": "The flow sensor application"
+                    "x-required": true,
+                    "description": "The flow sensor application",
+                    "x-position": 3
                 },
                 "current_draw_app": {
-                    "format": "doover-application",
                     "title": "Current Draw App",
                     "x-name": "current_draw_app",
                     "x-hidden": false,
+                    "format": "doover-resource-application",
                     "type": "string",
-                    "description": "The current draw application"
+                    "x-required": true,
+                    "description": "The current draw application",
+                    "x-position": 4
                 }
             },
             "additionalElements": true,
@@ -74,10 +84,10 @@
         "repo_branch": "main",
         "staging_config": {},
         "id": "162025813112288774",
-        "owner_org_id": null,
+        "owner_org_id": "142400552532231428",
         "organisation_id": 142400552532231428,
         "code_repo_id": null,
-        "container_registry_profile_id": 93955828574386692,
+        "container_registry_profile_id": 145420619704469767,
         "icon_url": null,
         "banner_url": null,
         "export_config_command": null,

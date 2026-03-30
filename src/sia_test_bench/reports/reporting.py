@@ -14,7 +14,6 @@ import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for headless operation
 import matplotlib.pyplot as plt
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import HTML
 
 # Set matplotlib parameters for print-friendly output
 plt.rcParams.update({
@@ -159,6 +158,7 @@ def generate_report_pdf(
     html_content = template.render(**context)
     
     # Convert to PDF using WeasyPrint
+    from weasyprint import HTML
     pdf_bytes = HTML(string=html_content).write_pdf()
     
     return pdf_bytes

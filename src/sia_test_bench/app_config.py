@@ -4,7 +4,15 @@ from pydoover import config
 
 
 class SiaTestBenchConfig(config.Schema):
-    pump_controller = config.Application(
+    data_dda = config.String(
+        "Data DDA",
+        default="",
+        description=(
+            "URI of the DDA whose tag_values supply sensor and pump readouts. "
+            "Leave empty to read tags from the local device agent only."
+        ),
+    )
+    pump_controller_app = config.Application(
         "Pump Controller App",
         description="The pump 1 application",
     )
@@ -12,11 +20,11 @@ class SiaTestBenchConfig(config.Schema):
         "Tank Level App",
         description="The tank level application",
     )
-    pressure_sensor_app = config.Application(
+    pressure_app = config.Application(
         "Pressure App",
         description="The pressure sensor application",
     )
-    flow_sensor_app = config.Application(
+    flow_meter_sensor_app = config.Application(
         "Flow Meter Sensor App",
         description="The flow sensor application",
     )

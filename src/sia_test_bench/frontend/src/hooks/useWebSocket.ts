@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTestBenchStore, type PumpData } from '../store/useTestBenchStore';
 
-// const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8092/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`;
 // Module-level flag to prevent multiple connections
 let globalConnectionActive = false;
 
@@ -86,6 +85,76 @@ export function useWebSocket() {
               // Forward state machine state to the store
               const { setStateMachineState } = useTestBenchStore.getState();
               setStateMachineState(data.state);
+            } else if (data.type === 'pump_selected') {
+              // Another client selected a pump
+              const store = useTestBenchStore.getState();
+              store.selectPumpById(data.pumpId);
+            } else if (data.type === 'input_activity') {
+              // Another client interacted with a control — flash it
+              const store = useTestBenchStore.getState();
+              store.setInputFlash(data.elementId);
+              setTimeout(() => {
+                useTestBenchStore.getState().setInputFlash(null);
+              }, 500);
+            } else if (data.type === 'pump_params_updated') {
+              // Another client saved pump params — update local selectedPump
+              const store = useTestBenchStore.getState();
+              const params = data.params;
+              if (store.selectedPump && params) {
+                store.setSelectedPump({
+                  ...store.selectedPump,
+                  name: params.name ?? store.selectedPump.name,
+                  model: params.model ?? store.selectedPump.model,
+                  serialNumber: params.serial_number ?? store.selectedPump.serialNumber,
+                  maxRPM: params.max_rpm ?? store.selectedPump.maxRPM,
+                  maxFlowRate: params.max_flow_rate ?? store.selectedPump.maxFlowRate,
+                  maxPressure: params.max_pressure ?? store.selectedPump.maxPressure,
+                  currentDraw: params.current_draw ?? store.selectedPump.currentDraw,
+                  strokeLength: params.stroke_length ?? store.selectedPump.strokeLength,
+                });
+              }
+            } else if (data.type === 'session_snapshot') {
+              // Apply full session snapshot on connect/reconnect
+              const store = useTestBenchStore.getState();
+              store.setPumpState(data.pumpState);
+              store.setTargetFlow(data.targetFlow);
+              store.setStateMachineState(data.stateMachineState);
+
+              // Bulk-load data history
+              if (data.dataHistory && data.dataHistory.length > 0) {
+                store.setDataHistory(data.dataHistory);
+              }
+
+              // Apply progress values
+              if (data.progress) {
+                for (const [key, value] of Object.entries(data.progress)) {
+                  store.setTestProgress(key, value as number);
+                }
+              }
+
+              // Apply completion flags
+              if (data.completion) {
+                for (const test of Object.keys(data.completion)) {
+                  store.setTestComplete(test);
+                }
+              }
+
+              // Derive the correct test view from state machine state
+              store.deriveTestViewFromState(data.stateMachineState);
+
+              // Auto-select pump from snapshot (after pumps are loaded)
+              if (data.selectedPumpId) {
+                const trySelectPump = () => {
+                  const s = useTestBenchStore.getState();
+                  if (s.availablePumps.length > 0) {
+                    s.selectPumpById(data.selectedPumpId);
+                  } else {
+                    // Pumps not loaded yet — retry shortly
+                    setTimeout(trySelectPump, 100);
+                  }
+                };
+                trySelectPump();
+              }
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);

@@ -469,28 +469,37 @@ export function TestBenchMockup() {
 
       {/* PUMP */}
           <g id="pump" className="overview-svg-component">
-              <rect 
-                x="1260" 
-                y="150" 
-                width="240" 
-                height="70" 
-                fill="white" 
-                stroke="grey" 
-                strokeWidth="2" 
+              <rect
+                x="1260"
+                y="150"
+                width="240"
+                height="90"
+                fill="white"
+                stroke="grey"
+                strokeWidth="2"
                 rx="5"
               />
-              <line 
-              x1="1382" 
-              y1="220" 
-              x2="1382" 
-              y2="343" 
-              stroke="grey" 
+              <line
+              x1="1382"
+              y1="240"
+              x2="1382"
+              y2="343"
+              stroke="grey"
               strokeWidth="2"
             />
-            <text x="1381.886719" y="198" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
-              {latestData?.pumpDutyCycle != null && typeof latestData.pumpDutyCycle === 'number' 
-                ? `${latestData.pumpDutyCycle.toFixed(1)} %` 
+            <text x="1381.886719" y="185" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
+              {latestData?.pumpDutyCycle != null && typeof latestData.pumpDutyCycle === 'number'
+                ? `${latestData.pumpDutyCycle.toFixed(1)} %`
                 : 'N/A %'}
+            </text>
+            <text x="1381.886719" y="205" text-anchor="middle" fill="#000000" font-size="11" font-family="Arial, sans-serif">
+              Duty Cycle
+            </text>
+            <line x1="1275" y1="215" x2="1485" y2="215" stroke="#e0e0e0" strokeWidth="1" />
+            <text x="1381.886719" y="232" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
+              {latestData?.pulseRate != null && typeof latestData.pulseRate === 'number'
+                ? `${latestData.pulseRate.toFixed(2)} Hz`
+                : '-- Hz'}
             </text>
             <path stroke-linecap="butt" transform="matrix(0.749701, 0, 0, 0.749701, 1340.955136, 542.178799)" fill="none" stroke-linejoin="miter" d="M 0.00252774 2.001982 L 30.999243 2.001982 " stroke="#000000" stroke-width="4" stroke-opacity="1" stroke-miterlimit="4"/>
             <path stroke-linecap="butt" transform="matrix(0.749701, 0, 0, 0.749701, 1340.955136, 563.114109)" fill="none" stroke-linejoin="miter" d="M 0.00252774 1.999693 L 108.999047 1.999693 " stroke="#000000" stroke-width="4" stroke-opacity="1" stroke-miterlimit="4"/>

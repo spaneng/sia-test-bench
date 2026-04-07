@@ -100,10 +100,18 @@ export interface TestBenchState {
   // Test timing
   setTestStartTimestamp: (timestamp: number | null) => void;
   setTestEndTimestamp: (timestamp: number | null) => void;
+
+  // Session snapshot helpers
+  setDataHistory: (history: PumpData[]) => void;
+  deriveTestViewFromState: (smState: string) => void;
+
+  // Multi-client sync
+  inputFlash: string | null;
+  setInputFlash: (elementId: string | null) => void;
+  selectPumpById: (pumpId: string) => void;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8092';
-// const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.host}`;
+const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.host}`;
 
 const MOCK_PUMPS: PumpType[] = [
   { 
@@ -169,6 +177,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   currentTestId: null,
   testStartTimestamp: null,
   testEndTimestamp: null,
+  inputFlash: null,
   
   // Setters
   setConnectionStatus: (status) => set({ 
@@ -437,5 +446,35 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   // Test timing setters
   setTestStartTimestamp: (timestamp) => set({ testStartTimestamp: timestamp }),
   setTestEndTimestamp: (timestamp) => set({ testEndTimestamp: timestamp }),
+
+  // Session snapshot helpers
+  setDataHistory: (history) => {
+    const latestData = history.length > 0 ? history[history.length - 1] : null;
+    set({ dataHistory: history.slice(-1000), latestData });
+  },
+
+  deriveTestViewFromState: (smState) => {
+    if (smState.startsWith('max_pressure_')) {
+      set({ currentTestView: 'max_pressure' });
+    } else if (smState.startsWith('max_flow_')) {
+      set({ currentTestView: 'max_flow' });
+    } else if (smState.startsWith('flow_accuracy_')) {
+      set({ currentTestView: 'flow_accuracy' });
+    } else if (smState.startsWith('auto_')) {
+      set({ currentTestView: 'auto' });
+    }
+    // Don't change to 'none' — leave existing view if state is 'off'
+  },
+
+  // Multi-client sync
+  setInputFlash: (elementId) => set({ inputFlash: elementId }),
+
+  selectPumpById: (pumpId) => {
+    const pumps = get().availablePumps;
+    const pump = pumps.find((p) => p.id === pumpId);
+    if (pump) {
+      set({ selectedPump: pump });
+    }
+  },
 }));
 

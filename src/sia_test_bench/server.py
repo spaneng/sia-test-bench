@@ -1,10 +1,13 @@
 import asyncio
+import collections
 import json
 import logging
 import os
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Set, Optional
+from typing import Set, Optional, Dict
 
 import aiohttp
 from aiohttp import web
@@ -46,10 +49,13 @@ class TestBenchServer:
         self.runner: AppRunner = None
         self.site: TCPSite = None
         self.websockets: Set[web.WebSocketResponse] = set()
+        self.client_ids: Dict[web.WebSocketResponse, str] = {}
+        self.selected_pump_id: str | None = None
         self.pump_state: str = 'warning_disabled'
         self.is_running: bool = False
         self.target_flow: float = 0.0
         self.test_persistence = TestPersistence()
+        self.data_buffer: collections.deque = collections.deque(maxlen=200)
 
     async def setup(self):
         """Initialize the web server."""
@@ -119,12 +125,18 @@ class TestBenchServer:
         """Handle WebSocket connections."""
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        
+
+        client_id = str(uuid.uuid4())
         self.websockets.add(ws)
-        log.info(f"WebSocket client connected. Total clients: {len(self.websockets)}")
-        
-        # Send initial state
-        await self.broadcast_state()
+        self.client_ids[ws] = client_id
+        log.info(f"WebSocket client connected ({client_id}). Total clients: {len(self.websockets)}")
+
+        # Send session snapshot to the newly connected client
+        snapshot = self.build_session_snapshot()
+        try:
+            await ws.send_str(json.dumps(snapshot))
+        except Exception as e:
+            log.error(f"Error sending session snapshot to client: {e}")
         
         try:
             async for msg in ws:
@@ -140,7 +152,8 @@ class TestBenchServer:
             log.error(f"WebSocket error: {e}")
         finally:
             self.websockets.discard(ws)
-            log.info(f"WebSocket client disconnected. Total clients: {len(self.websockets)}")
+            self.client_ids.pop(ws, None)
+            log.info(f"WebSocket client disconnected ({client_id}). Total clients: {len(self.websockets)}")
         
         return ws
 
@@ -164,6 +177,12 @@ class TestBenchServer:
                     await self.application.set_flow_rate(flow_rate)
                 else:
                     log.warning("Application reference not set, cannot set flow rate")
+                # Sync target flow to other clients
+                await self.broadcast_to_others(ws, {
+                    'type': 'state',
+                    'state': self.pump_state,
+                    'targetFlow': self.target_flow,
+                })
         elif message_type == 'test':
             # Handle test mode commands
             command = data.get('command')
@@ -243,7 +262,17 @@ class TestBenchServer:
         elif message_type == 'pump':
             # Handle pump-related commands
             command = data.get('command')
-            if command == 'set_pump_params':
+            if command == 'select_pump':
+                pump_id = data.get('pumpId')
+                if pump_id:
+                    self.selected_pump_id = pump_id
+                    log.info(f"Pump selected: {pump_id}")
+                    # Broadcast to all other clients
+                    await self.broadcast_to_others(ws, {
+                        'type': 'pump_selected',
+                        'pumpId': pump_id,
+                    })
+            elif command == 'set_pump_params':
                 # Save pump parameters from UI form
                 params = data.get('params', {})
                 if self.application:
@@ -251,8 +280,21 @@ class TestBenchServer:
                     log.info(f"Pump parameters saved: {params}")
                 else:
                     log.warning("Application reference not set, cannot save pump parameters")
+                # Broadcast params to other clients so they can update editable pump data
+                await self.broadcast_to_others(ws, {
+                    'type': 'pump_params_updated',
+                    'params': params,
+                })
             else:
                 log.debug(f"Unknown pump command: {command}")
+        elif message_type == 'input_activity':
+            # Rebroadcast input activity to all other clients
+            element_id = data.get('elementId')
+            if element_id:
+                await self.broadcast_to_others(ws, {
+                    'type': 'input_activity',
+                    'elementId': element_id,
+                })
         elif message_type == 'get_state':
             # Send current state
             await self.send_state_to_client(ws)
@@ -262,11 +304,12 @@ class TestBenchServer:
 
     async def push_data(self, data: dict):
         """Push a data packet to the frontend via WebSocket.
-        
+
         Args:
             data: Dictionary containing the data packet. Should include 'type': 'data'
                   and fields like 'timestamp', 'pressure', 'flowRate', etc.
         """
+        self.data_buffer.append(data)
         await self.broadcast_data(data)
     
     async def push_test_progress(self, data: dict):
@@ -302,18 +345,37 @@ class TestBenchServer:
         """Broadcast data to all connected WebSocket clients."""
         if not self.websockets:
             return
-        
+
         message = json.dumps(data)
         disconnected = set()
-        
+
         for ws in self.websockets:
             try:
                 await ws.send_str(message)
             except Exception as e:
                 log.error(f"Error sending data to client: {e}")
                 disconnected.add(ws)
-        
+
         # Remove disconnected clients
+        self.websockets -= disconnected
+
+    async def broadcast_to_others(self, sender: web.WebSocketResponse, data: dict):
+        """Broadcast data to all connected WebSocket clients except the sender."""
+        if not self.websockets:
+            return
+
+        message = json.dumps(data)
+        disconnected = set()
+
+        for ws in self.websockets:
+            if ws is sender:
+                continue
+            try:
+                await ws.send_str(message)
+            except Exception as e:
+                log.error(f"Error sending data to client: {e}")
+                disconnected.add(ws)
+
         self.websockets -= disconnected
 
     async def broadcast_state(self):
@@ -334,6 +396,67 @@ class TestBenchServer:
             }))
         except Exception as e:
             log.error(f"Error sending state to client: {e}")
+
+    def build_session_snapshot(self) -> dict:
+        """Build a snapshot of the current session state for a newly connected client."""
+        from sia_test_bench.application import (
+            MAX_PRESSURE_STABILISE_DURATION, MAX_PRESSURE_RUN_DURATION,
+            MAX_FLOW_STABILISE_DURATION, MAX_FLOW_RUN_DURATION,
+            FLOW_ACCURACY_STABILISE_DURATION,
+            FLOW_ACCURACY_PHASE1_DURATION, FLOW_ACCURACY_PHASE2_DURATION,
+            FLOW_ACCURACY_PHASE3_DURATION,
+        )
+
+        sm_state = self.state.state if self.state else 'off'
+        test_mode = self.application.shared_testmode if self.application else 'off'
+
+        # Compute live progress percentages from timer start times
+        progress = {}
+        completion = {}
+        now = time.time()
+        app = self.application
+
+        if app:
+            timer_map = {
+                'max_pressure_stabilise': (app.max_pressure_stabilise_start_time, MAX_PRESSURE_STABILISE_DURATION),
+                'max_pressure': (app.max_pressure_run_start_time, MAX_PRESSURE_RUN_DURATION),
+                'max_flow_stabilise': (app.max_flow_stabilise_start_time, MAX_FLOW_STABILISE_DURATION),
+                'max_flow': (app.max_flow_run_start_time, MAX_FLOW_RUN_DURATION),
+                'flow_accuracy_stabilise': (app.flow_accuracy_stabilise_start_time, FLOW_ACCURACY_STABILISE_DURATION),
+                'flow_accuracy_phase1': (app.flow_accuracy_phase1_start_time, FLOW_ACCURACY_PHASE1_DURATION),
+                'flow_accuracy_phase2': (app.flow_accuracy_phase2_start_time, FLOW_ACCURACY_PHASE2_DURATION),
+                'flow_accuracy_phase3': (app.flow_accuracy_phase3_start_time, FLOW_ACCURACY_PHASE3_DURATION),
+            }
+            for key, (start_time, duration) in timer_map.items():
+                if start_time is not None:
+                    elapsed = now - start_time
+                    progress[key] = min(100.0, (elapsed / duration) * 100.0)
+
+            # Completion flags
+            if sm_state == 'max_pressure_end':
+                completion['max_pressure'] = True
+            if sm_state == 'max_flow_end':
+                completion['max_flow'] = True
+            if sm_state == 'flow_accuracy_end':
+                completion['flow_accuracy'] = True
+
+        # Pump params
+        pump_params = None
+        if app and hasattr(app, 'ui_pump_params'):
+            pump_params = app.ui_pump_params
+
+        return {
+            'type': 'session_snapshot',
+            'pumpState': self.pump_state,
+            'targetFlow': self.target_flow,
+            'stateMachineState': sm_state,
+            'testMode': test_mode,
+            'dataHistory': list(self.data_buffer),
+            'progress': progress,
+            'completion': completion,
+            'pumpParams': pump_params,
+            'selectedPumpId': self.selected_pump_id,
+        }
 
     async def get_pumps_handler(self, request: web.Request) -> web.Response:
         """Handle GET /api/pumps - return available pump types."""

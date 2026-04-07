@@ -39,6 +39,7 @@ export function ControlPlane() {
     setTestStartTimestamp,
     setTestEndTimestamp,
     dataHistory,
+    inputFlash,
   } = useTestBenchStore();
 
   const [isExiting, setIsExiting] = useState(false);
@@ -78,10 +79,78 @@ export function ControlPlane() {
   } | null>(null);
   const hasInitializedPumpInfo = useRef<string | null>(null);
   const downloadedReportUrl = useRef<string | null>(null);
+  const hasAppliedSnapshot = useRef(false);
+  const flowActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Derive local UI flags from session snapshot state on initial load
+  useEffect(() => {
+    if (hasAppliedSnapshot.current) return;
+
+    // If a pump is already selected (from snapshot), skip the pump info form
+    if (selectedPump && showPumpInfoView) {
+      setShowPumpInfoView(false);
+    }
+
+    if (stateMachineState === 'off') return;
+
+    hasAppliedSnapshot.current = true;
+
+    // Determine which test family is active
+    const isMaxPressure = stateMachineState.startsWith('max_pressure_');
+    const isMaxFlow = stateMachineState.startsWith('max_flow_');
+    const isFlowAccuracy = stateMachineState.startsWith('flow_accuracy_');
+
+    // Any active test state means test is running
+    if (isMaxPressure || isMaxFlow || isFlowAccuracy) {
+      setIsTestRunning(true);
+    }
+
+    // Past the _start state means the user has already confirmed
+    const pastStart = (prefix: string) => {
+      const suffix = stateMachineState.replace(prefix + '_', '');
+      return ['verify', 'stabilise', 'run', 'end', 'phase1', 'phase2', 'phase3'].includes(suffix);
+    };
+
+    if (isMaxPressure && pastStart('max_pressure')) {
+      setMaxPressureConfirmed(true);
+    }
+    if (isMaxFlow && pastStart('max_flow')) {
+      setMaxFlowConfirmed(true);
+    }
+    if (isFlowAccuracy && pastStart('flow_accuracy')) {
+      setFlowAccuracyConfirmed(true);
+    }
+
+    // Verifying states
+    if (stateMachineState === 'max_pressure_verify') {
+      setMaxPressureVerifying(true);
+    }
+    if (stateMachineState === 'max_flow_verify') {
+      setMaxFlowVerifying(true);
+    }
+    if (stateMachineState === 'flow_accuracy_verify') {
+      setFlowAccuracyVerifying(true);
+    }
+  }, [stateMachineState, selectedPump, showPumpInfoView]);
 
   useEffect(() => {
     fetchAvailablePumps();
   }, [fetchAvailablePumps]);
+
+  // Apply remote input flash — find element by data-element-id, add .remote-flash class
+  useEffect(() => {
+    if (!inputFlash) return;
+    const el = document.querySelector(`[data-element-id="${inputFlash}"]`);
+    if (!el) return;
+    el.classList.remove('remote-flash');
+    // Force reflow to restart animation
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add('remote-flash');
+    const timer = setTimeout(() => {
+      el.classList.remove('remote-flash');
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [inputFlash]);
 
   // Automatically download report when it becomes available
   useEffect(() => {
@@ -416,6 +485,9 @@ export function ControlPlane() {
     }
     const pump = availablePumps.find((p) => p.id === pumpId);
     if (pump) {
+      // Notify other clients
+      sendMessage({ type: 'pump', command: 'select_pump', pumpId });
+      sendMessage({ type: 'input_activity', elementId: 'pump_select' });
       // Trigger exit animation before changing page
       setPumpSelectionExiting(true);
       setTimeout(() => {
@@ -429,6 +501,7 @@ export function ControlPlane() {
   const handleTestButtonClick = (testType: 'auto' | 'max_pressure' | 'max_flow' | 'flow_accuracy') => {
     // Send test mode to backend
     sendMessage({ type: 'test', command: 'set_test_mode', mode: testType });
+    sendMessage({ type: 'input_activity', elementId: `test_${testType}` });
     
     // Reset progress when starting a new test
     resetTestProgress();
@@ -471,6 +544,7 @@ export function ControlPlane() {
   const handleCancelTest = () => {
     // Send message to cancel test
     sendMessage({ type: 'test', command: 'cancel_test' });
+    sendMessage({ type: 'input_activity', elementId: 'cancel_test' });
     
     // Exit test view and return to test selection (no animation)
     setCurrentTestView('none');
@@ -500,13 +574,15 @@ export function ControlPlane() {
 
   const handleConfirmValves = () => {
     // Determine which test to confirm based on currentTestView or stateMachineState (for auto mode)
-    const testToConfirm = currentTestView === 'auto' 
-      ? (stateMachineState.includes('max_pressure') ? 'max_pressure' 
+    const testToConfirm = currentTestView === 'auto'
+      ? (stateMachineState.includes('max_pressure') ? 'max_pressure'
          : stateMachineState.includes('max_flow') && !stateMachineState.includes('flow_accuracy') ? 'max_flow'
          : stateMachineState.includes('flow_accuracy') ? 'flow_accuracy'
          : null)
       : currentTestView;
-    
+
+    sendMessage({ type: 'input_activity', elementId: `confirm_${testToConfirm}` });
+
     if (testToConfirm === 'max_pressure') {
       setMaxPressureConfirmed(true);
       setMaxPressureVerifying(true);
@@ -563,6 +639,7 @@ export function ControlPlane() {
   };
 
   const handleContinueFromPumpInfo = () => {
+    sendMessage({ type: 'input_activity', elementId: 'continue_pump_info' });
     // Update the selected pump with edited values before continuing
     if (selectedPump && editablePumpData) {
       const updatedPump = {
@@ -690,6 +767,7 @@ export function ControlPlane() {
               value=""
               onChange={(e) => handlePumpSelect(e.target.value)}
               disabled={isLoadingPumps}
+              data-element-id="pump_select"
             >
               <option value="">-- Select a pump --</option>
               {availablePumps.map((pump: { id: string; name: string }) => (
@@ -869,6 +947,7 @@ export function ControlPlane() {
           <button
             className="btn btn-primary btn-continue"
             onClick={handleContinueFromPumpInfo}
+            data-element-id="continue_pump_info"
           >
             Continue
           </button>
@@ -964,24 +1043,28 @@ export function ControlPlane() {
               <button
                 className="btn btn-test"
                 onClick={() => handleTestButtonClick('auto')}
+                data-element-id="test_auto"
               >
                 Auto
               </button>
               <button
                 className="btn btn-test"
                 onClick={() => handleTestButtonClick('max_pressure')}
+                data-element-id="test_max_pressure"
               >
                 Max Pressure
               </button>
               <button
                 className="btn btn-test"
                 onClick={() => handleTestButtonClick('max_flow')}
+                data-element-id="test_max_flow"
               >
                 Max Flow
               </button>
               <button
                 className="btn btn-test"
                 onClick={() => handleTestButtonClick('flow_accuracy')}
+                data-element-id="test_flow_accuracy"
               >
                 Flow Accuracy
               </button>
@@ -1005,6 +1088,7 @@ export function ControlPlane() {
               <button
                 className="btn btn-cancel-test"
                 onClick={handleCancelTest}
+                data-element-id="cancel_test"
               >
                 Cancel Test
               </button>
@@ -1031,6 +1115,7 @@ export function ControlPlane() {
                           <button
                             className="btn btn-primary btn-confirm"
                             onClick={handleConfirmValves}
+                            data-element-id="confirm_max_pressure"
                           >
                             Accept
                           </button>
@@ -1111,6 +1196,7 @@ export function ControlPlane() {
                           <button
                             className="btn btn-primary btn-confirm"
                             onClick={handleConfirmValves}
+                            data-element-id="confirm_max_flow"
                           >
                             Accept
                           </button>
@@ -1191,6 +1277,7 @@ export function ControlPlane() {
                           <button
                             className="btn btn-primary btn-confirm"
                             onClick={handleConfirmValves}
+                            data-element-id="confirm_flow_accuracy"
                           >
                             Accept
                           </button>
@@ -1310,6 +1397,7 @@ export function ControlPlane() {
                       <button
                         className="btn btn-primary btn-confirm"
                         onClick={handleConfirmValves}
+                        data-element-id="confirm_max_pressure"
                       >
                         Accept
                       </button>
@@ -1388,6 +1476,7 @@ export function ControlPlane() {
                       <button
                         className="btn btn-primary btn-confirm"
                         onClick={handleConfirmValves}
+                        data-element-id="confirm_max_flow"
                       >
                         Accept
                       </button>
@@ -1467,6 +1556,7 @@ export function ControlPlane() {
                       <button
                         className="btn btn-primary btn-confirm"
                         onClick={handleConfirmValves}
+                        data-element-id="confirm_flow_accuracy"
                       >
                         Accept
                       </button>
@@ -1585,16 +1675,18 @@ export function ControlPlane() {
         <div className="control-row">
           <div className="button-group button-group-left">
             <button
-              onClick={startPump}
+              onClick={() => { startPump(); sendMessage({ type: 'input_activity', elementId: 'start_pump' }); }}
               disabled={connectionStatus !== 'connected' || pumpState === 'on'}
               className="btn btn-primary btn-narrow"
+              data-element-id="start_pump"
             >
               Start
             </button>
             <button
-              onClick={stopPump}
+              onClick={() => { stopPump(); sendMessage({ type: 'input_activity', elementId: 'stop_pump' }); }}
               disabled={connectionStatus !== 'connected' || pumpState === 'off'}
               className="btn btn-danger btn-narrow"
+              data-element-id="stop_pump"
             >
               Stop
             </button>
@@ -1614,8 +1706,15 @@ export function ControlPlane() {
                   const value = parseFloat(e.target.value);
                   setTargetFlow(value);
                   sendMessage({ type: 'control', command: 'set_target_flow', value });
+                  // Debounced input_activity — only send once per interaction
+                  if (!flowActivityTimer.current) {
+                    sendMessage({ type: 'input_activity', elementId: 'set_target_flow' });
+                  }
+                  if (flowActivityTimer.current) clearTimeout(flowActivityTimer.current);
+                  flowActivityTimer.current = setTimeout(() => { flowActivityTimer.current = null; }, 500);
                 }}
                 className="target-flow-slider"
+                data-element-id="set_target_flow"
               />
               <input
                 type="number"
@@ -1630,8 +1729,10 @@ export function ControlPlane() {
                   const clampedValue = Math.max(0, Math.min(maxFlow, value));
                   setTargetFlow(clampedValue);
                   sendMessage({ type: 'control', command: 'set_target_flow', value: clampedValue });
+                  sendMessage({ type: 'input_activity', elementId: 'set_target_flow' });
                 }}
                 className="target-flow-input"
+                data-element-id="set_target_flow"
               />
             </div>
           </div>

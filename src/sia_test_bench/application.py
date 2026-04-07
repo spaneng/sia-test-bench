@@ -3,9 +3,11 @@ import logging
 import time
 
 from pydoover.docker import Application
+from pydoover.tags.manager import KeyPath
 
 from .app_config import SiaTestBenchConfig
 from .app_state import SiaTestBenchState
+from .pulse_detector import PulseRateDetector
 from .server import TestBenchServer
 from .utils import PumpType
 
@@ -24,6 +26,17 @@ FLOW_ACCURACY_PHASE3_DURATION = 30.0
 
 class SiaTestBenchApplication(Application):
     config_cls = SiaTestBenchConfig
+
+    def get_data_tag(self, tag_key: str, source_app_key: str, default=None):
+        """Read a tag from the configured data DDA, or locally if Data DDA is unset."""
+        uri = (self.config.data_dda.value or "").strip()
+        if uri:
+            return self.tag_manager.get_tag(
+                KeyPath([uri, source_app_key, tag_key]),
+                default=default,
+                app_key=None,
+            )
+        return self.get_tag(tag_key, source_app_key, default=default)
 
     async def setup(self):
         self.started = time.time()
@@ -55,12 +68,21 @@ class SiaTestBenchApplication(Application):
 
         config_agg = await self.device_agent.fetch_channel_aggregate("deployment_config")
         deployment_config = config_agg.data
-        pump_control_config = deployment_config.get("applications").get(self.config.pump_controller.value)
+        pump_control_config = deployment_config.get("applications").get(self.config.pump_controller_app.value)
         pump_size = pump_control_config.get("pump_size").replace("/","_")
         self.pump_controller_pump = PumpType[pump_size]
         self.pump_max = self.pump_controller_pump.value.get_max_rate()
         
         
+        self.pulse_detector = PulseRateDetector()
+        dda_uri = (self.config.data_dda.value or "").strip() or None
+        self.pulse_detector.subscribe(
+            self,
+            tag_key="value",
+            app_key=self.config.flow_meter_sensor_app.value,
+            data_dda_uri=dda_uri,
+        )
+
         self.state = SiaTestBenchState(app=self)
         self.server = TestBenchServer(state=self.state, app=self)
         await self.server.setup()
@@ -88,12 +110,16 @@ class SiaTestBenchApplication(Application):
         
         # Get tag values for system data
         try:
-            pressure = self.get_tag("value", self.config.pressure_sensor_app.value)
-            tank_level = self.get_tag("level_filled_percentage", self.config.tank_level_app.value)
-            flow_rate = self.get_tag("value", self.config.flow_sensor_app.value)
-            current_draw = self.get_tag("value", self.config.current_draw_app.value)
-            pump_duty_cycle = self.get_tag("PumpDutyCycle_ReadOnly", self.config.pump_controller.value)
-            pump_state = self.get_tag("AppState", self.config.pump_controller.value)
+            pressure = self.get_data_tag("value", self.config.pressure_app.value)
+            tank_level = self.get_data_tag(
+                "level_filled_percentage", self.config.tank_level_app.value
+            )
+            flow_rate = self.get_data_tag("value", self.config.flow_meter_sensor_app.value)
+            current_draw = self.get_data_tag("value", self.config.current_draw_app.value)
+            pump_duty_cycle = self.get_data_tag(
+                "PumpDutyCycle_ReadOnly", self.config.pump_controller_app.value
+            )
+            pump_state = self.get_data_tag("AppState", self.config.pump_controller_app.value)
             
             # Normalize pump_state: convert "auto" to "on" for consistency
             if pump_state == "auto":
@@ -102,7 +128,7 @@ class SiaTestBenchApplication(Application):
             if pump_duty_cycle is not None:
                 pump_duty_cycle = round(pump_duty_cycle * 100, 2)
                 
-            pulse_rate = 10 #self.get_tag("pulse_rate")
+            pulse_rate = self.pulse_detector.pulse_rate
             valve_state = False #self.get_tag("valve_state")
             
             # Store current pressure and flow for verification checks
@@ -174,6 +200,8 @@ class SiaTestBenchApplication(Application):
     
     async def cleanup(self):
         """Cleanup resources when shutting down."""
+        if self.pulse_detector:
+            await self.pulse_detector.stop()
         if self.server:
             await self.server.cleanup()
             
@@ -182,7 +210,7 @@ class SiaTestBenchApplication(Application):
         if await self.get_ui_max_flow_rate() is not None:
             duty_cycle = flow_rate / await self.get_ui_max_flow_rate()
             flow_rate = duty_cycle * self.pump_max
-            await self.set_tag("TargetRate",flow_rate, self.config.pump_controller.value)
+            await self.set_tag("TargetRate",flow_rate, self.config.pump_controller_app.value)
 
     def check_off_command(self):
         return False
@@ -310,11 +338,11 @@ class SiaTestBenchApplication(Application):
 
     async def stop_pump(self):
         log.info("Stopping pump")
-        await self.set_tag("StateControlTag",0, self.config.pump_controller.value)
+        await self.set_tag("StateControlTag",0, self.config.pump_controller_app.value)
 
     async def start_pump(self):
         log.info("Starting pump")
-        await self.set_tag("StateControlTag",2, self.config.pump_controller.value)
+        await self.set_tag("StateControlTag",2, self.config.pump_controller_app.value)
 
     def clear_shared_testmode(self):
         self.shared_testmode = "off"

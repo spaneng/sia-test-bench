@@ -19,6 +19,19 @@
             "title": "$default",
             "type": "object",
             "properties": {
+                "data_dda": {
+                    "title": "Data DDA",
+                    "x-name": "data_dda",
+                    "x-hidden": false,
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "x-required": false,
+                    "description": "URI of the DDA whose tag_values supply sensor and pump readouts. Leave empty to read tags from the local device agent only.",
+                    "default": "",
+                    "x-position": 0
+                },
                 "pump_controller_app": {
                     "title": "Pump Controller App",
                     "x-name": "pump_controller_app",
@@ -27,7 +40,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The pump 1 application",
-                    "x-position": 0
+                    "x-position": 1
                 },
                 "tank_level_app": {
                     "title": "Tank Level App",
@@ -37,7 +50,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The tank level application",
-                    "x-position": 1
+                    "x-position": 2
                 },
                 "pressure_app": {
                     "title": "Pressure App",
@@ -47,7 +60,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The pressure sensor application",
-                    "x-position": 2
+                    "x-position": 3
                 },
                 "flow_meter_sensor_app": {
                     "title": "Flow Meter Sensor App",
@@ -57,7 +70,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The flow sensor application",
-                    "x-position": 3
+                    "x-position": 4
                 },
                 "current_draw_app": {
                     "title": "Current Draw App",
@@ -67,7 +80,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The current draw application",
-                    "x-position": 4
+                    "x-position": 5
                 }
             },
             "additionalElements": true,

@@ -3,7 +3,8 @@ import logging
 import time
 
 from pydoover.docker import Application
-from pydoover.tags.manager import KeyPath
+from pydoover.docker.device_agent.device_agent import DeviceAgentInterface
+from pydoover.tags.manager import KeyPath, TagsManagerDocker
 
 from .app_config import SiaTestBenchConfig
 from .app_state import SiaTestBenchState
@@ -35,13 +36,10 @@ class SiaTestBenchApplication(Application):
             return fallback
 
     def get_data_tag(self, tag_key: str, source_app_key: str, default=None):
-        """Read a tag from the configured data DDA, or locally if Data DDA is unset."""
-        uri = (self._safe_config(self.config.data_dda, "") or "").strip()
-        if uri:
-            return self.tag_manager.get_tag(
-                KeyPath([uri, source_app_key, tag_key]),
-                default=default,
-                app_key=None,
+        """Read a tag from the remote data DDA, or locally if Data DDA is unset."""
+        if self.remote_tag_manager is not None:
+            return self.remote_tag_manager.get_tag(
+                tag_key, default=default, app_key=source_app_key,
             )
         return self.get_tag(tag_key, source_app_key, default=default)
 
@@ -75,9 +73,12 @@ class SiaTestBenchApplication(Application):
 
         dda_uri = (self._safe_config(self.config.data_dda, "") or "").strip() or None
 
+        self.remote_tag_manager = None
         if dda_uri:
-            from pydoover.docker.device_agent.device_agent import DeviceAgentInterface
             remote_agent = DeviceAgentInterface(app_key=self.app_key, dda_uri=dda_uri)
+            self.remote_tag_manager = TagsManagerDocker(client=remote_agent)
+            await self.remote_tag_manager.setup()
+            log.info(f"Remote tag manager connected to DDA at {dda_uri}")
             config_agg = await remote_agent.fetch_channel_aggregate("deployment_config")
         else:
             config_agg = await self.device_agent.fetch_channel_aggregate("deployment_config")

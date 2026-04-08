@@ -49,16 +49,13 @@ class PulseRateDetector:
             app: The pydoover Application instance.
             tag_key: The tag name to subscribe to (e.g. "value").
             app_key: The application key for the flow meter sensor.
-            data_dda_uri: If set, subscribe under KeyPath [uri, app_key, tag_key]
-                (same layout as :meth:`SiaTestBenchApplication.get_data_tag`).
+            data_dda_uri: If set, subscribe via the remote tag manager.
         """
-        if data_dda_uri:
-            from pydoover.tags.manager import KeyPath
-
-            app.tag_manager.subscribe_to_tag(
-                KeyPath([data_dda_uri, app_key, tag_key]),
+        if data_dda_uri and app.remote_tag_manager is not None:
+            app.remote_tag_manager.subscribe_to_tag(
+                tag_key,
                 callback=self._on_tag_update,
-                app_key=None,
+                app_key=app_key,
             )
         else:
             app.subscribe_to_tag(tag_key, self._on_tag_update, app_key=app_key)

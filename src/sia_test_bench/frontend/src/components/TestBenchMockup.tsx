@@ -473,7 +473,7 @@ export function TestBenchMockup() {
                 x="1260"
                 y="150"
                 width="240"
-                height="90"
+                height="140"
                 fill="white"
                 stroke="grey"
                 strokeWidth="2"
@@ -481,7 +481,7 @@ export function TestBenchMockup() {
               />
               <line
               x1="1382"
-              y1="240"
+              y1="290"
               x2="1382"
               y2="343"
               stroke="grey"
@@ -495,11 +495,14 @@ export function TestBenchMockup() {
             <text x="1381.886719" y="205" text-anchor="middle" fill="#000000" font-size="11" font-family="Arial, sans-serif">
               Duty Cycle
             </text>
-            <line x1="1275" y1="215" x2="1485" y2="215" stroke="#e0e0e0" strokeWidth="1" />
-            <text x="1381.886719" y="232" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
+            <line x1="1275" y1="220" x2="1485" y2="220" stroke="#e0e0e0" strokeWidth="1" />
+            <text x="1381.886719" y="248" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
               {latestData?.pulseRate != null && typeof latestData.pulseRate === 'number'
                 ? `${latestData.pulseRate.toFixed(2)} Hz`
                 : '-- Hz'}
+            </text>
+            <text x="1381.886719" y="268" text-anchor="middle" fill="#000000" font-size="11" font-family="Arial, sans-serif">
+              Pulse Rate
             </text>
             <path stroke-linecap="butt" transform="matrix(0.749701, 0, 0, 0.749701, 1340.955136, 542.178799)" fill="none" stroke-linejoin="miter" d="M 0.00252774 2.001982 L 30.999243 2.001982 " stroke="#000000" stroke-width="4" stroke-opacity="1" stroke-miterlimit="4"/>
             <path stroke-linecap="butt" transform="matrix(0.749701, 0, 0, 0.749701, 1340.955136, 563.114109)" fill="none" stroke-linejoin="miter" d="M 0.00252774 1.999693 L 108.999047 1.999693 " stroke="#000000" stroke-width="4" stroke-opacity="1" stroke-miterlimit="4"/>

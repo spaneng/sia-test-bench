@@ -18,6 +18,7 @@ dependencies = [
 [project.scripts]
 doover-app-run = "sia_test_bench:main"
 export-config = "sia_test_bench.app_config:export"
+export-ui = "sia_test_bench.app_config:export_ui"
 
 [tool.hatch.metadata]
 allow-direct-references = true

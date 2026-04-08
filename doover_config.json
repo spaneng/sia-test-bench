@@ -81,6 +81,24 @@
                     "x-required": true,
                     "description": "The current draw application",
                     "x-position": 5
+                },
+                "pulse_detection_source": {
+                    "enum": [
+                        "flow",
+                        "current_draw",
+                        "both"
+                    ],
+                    "title": "Pulse Detection Source",
+                    "x-name": "pulse_detection_source",
+                    "x-hidden": false,
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "x-required": false,
+                    "description": "Which sensor(s) to use for pulse rate detection.",
+                    "default": "flow",
+                    "x-position": 6
                 }
             },
             "additionalElements": true,

@@ -32,6 +32,12 @@ class SiaTestBenchConfig(config.Schema):
         "Current Draw App",
         description="The current draw application",
     )
+    pulse_source = config.Enum(
+        "Pulse Detection Source",
+        choices=["flow", "current_draw", "both"],
+        default="flow",
+        description="Which sensor(s) to use for pulse rate detection.",
+    )
 
 
 def export():

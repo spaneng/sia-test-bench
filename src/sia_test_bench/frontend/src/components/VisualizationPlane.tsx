@@ -47,8 +47,8 @@ export function VisualizationPlane() {
     [dataHistory]
   );
   
-  const currentData = useMemo(() => 
-    dataHistory.map(point => point.current ?? 0),
+  const currentData = useMemo(() =>
+    dataHistory.map(point => point.currentDraw ?? 0),
     [dataHistory]
   );
   
@@ -114,7 +114,7 @@ export function VisualizationPlane() {
               data={currentData}
               unit="A"
               color="#ef4444"
-              latestValue={latestData?.current}
+              latestValue={latestData?.currentDraw}
             />
             <MiniLiveChart
               label="Pump Duty Cycle"

@@ -72,15 +72,35 @@
                     "description": "The flow sensor application",
                     "x-position": 4
                 },
-                "current_draw_app": {
-                    "title": "Current Draw App",
-                    "x-name": "current_draw_app",
+                "current_draw_24vdc_app": {
+                    "title": "Current Draw 24VDC App",
+                    "x-name": "current_draw_24vdc_app",
                     "x-hidden": false,
                     "format": "doover-resource-application",
                     "type": "string",
                     "x-required": true,
-                    "description": "The current draw application",
+                    "description": "The current transducer application for 24VDC pumps",
                     "x-position": 5
+                },
+                "current_draw_12vdc_app": {
+                    "title": "Current Draw 12VDC App",
+                    "x-name": "current_draw_12vdc_app",
+                    "x-hidden": false,
+                    "format": "doover-resource-application",
+                    "type": "string",
+                    "x-required": true,
+                    "description": "The current transducer application for 12VDC pumps",
+                    "x-position": 6
+                },
+                "current_draw_240vac_app": {
+                    "title": "Current Draw 240VAC App",
+                    "x-name": "current_draw_240vac_app",
+                    "x-hidden": false,
+                    "format": "doover-resource-application",
+                    "type": "string",
+                    "x-required": true,
+                    "description": "The current transducer application for 240VAC pumps",
+                    "x-position": 7
                 },
                 "pulse_detection_source": {
                     "enum": [
@@ -98,7 +118,7 @@
                     "x-required": false,
                     "description": "Which sensor(s) to use for pulse rate detection.",
                     "default": "flow",
-                    "x-position": 6
+                    "x-position": 8
                 }
             },
             "additionalElements": true,
@@ -107,7 +127,9 @@
                 "tank_level_app",
                 "pressure_app",
                 "flow_meter_sensor_app",
-                "current_draw_app"
+                "current_draw_24vdc_app",
+                "current_draw_12vdc_app",
+                "current_draw_240vac_app"
             ]
         },
         "key": "962c46ee-ed6d-47f5-8aab-14ca9d03b9b7",

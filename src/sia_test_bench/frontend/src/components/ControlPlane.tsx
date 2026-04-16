@@ -40,6 +40,7 @@ export function ControlPlane() {
     setTestEndTimestamp,
     dataHistory,
     inputFlash,
+    latestData,
   } = useTestBenchStore();
 
   const [isExiting, setIsExiting] = useState(false);
@@ -81,6 +82,62 @@ export function ControlPlane() {
   const downloadedReportUrl = useRef<string | null>(null);
   const hasAppliedSnapshot = useRef(false);
   const flowActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Flow pending / confirmation state
+  const [localSliderValue, setLocalSliderValue] = useState(targetFlow);
+  const [isFlowPending, setIsFlowPending] = useState(false);
+  const [isFlowShaking, setIsFlowShaking] = useState(false);
+  const previousFlow = useRef<number>(targetFlow);
+  const expectedDutyCycle = useRef<number | null>(null);
+  const confirmTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync localSliderValue from external targetFlow changes when not pending
+  useEffect(() => {
+    if (!isFlowPending) {
+      setLocalSliderValue(targetFlow);
+    }
+  }, [targetFlow, isFlowPending]);
+
+  // Watch pumpDutyCycle for confirmation
+  useEffect(() => {
+    if (!isFlowPending || expectedDutyCycle.current === null || !latestData) return;
+    const currentDutyCycle = latestData.pumpDutyCycle;
+    if (currentDutyCycle === undefined) return;
+    if (Math.abs(currentDutyCycle - expectedDutyCycle.current) <= 1) {
+      // Confirmed — re-enable slider
+      if (confirmTimeout.current) clearTimeout(confirmTimeout.current);
+      confirmTimeout.current = null;
+      expectedDutyCycle.current = null;
+      setIsFlowPending(false);
+    }
+  }, [latestData, isFlowPending]);
+
+  const commitFlowRate = (value: number) => {
+    const maxFlow = selectedPump?.maxFlowRate ?? 100;
+    const clamped = Math.max(0, Math.min(maxFlow, value));
+    previousFlow.current = targetFlow;
+    const dutyCyclePct = maxFlow > 0 ? (clamped / maxFlow) * 100 : 0;
+    expectedDutyCycle.current = dutyCyclePct;
+
+    setTargetFlow(clamped);
+    setLocalSliderValue(clamped);
+    sendMessage({ type: 'control', command: 'set_target_flow', value: clamped });
+    sendMessage({ type: 'input_activity', elementId: 'set_target_flow' });
+    setIsFlowPending(true);
+
+    // Start timeout
+    if (confirmTimeout.current) clearTimeout(confirmTimeout.current);
+    confirmTimeout.current = setTimeout(() => {
+      // Revert and shake
+      setTargetFlow(previousFlow.current);
+      setLocalSliderValue(previousFlow.current);
+      sendMessage({ type: 'control', command: 'set_target_flow', value: previousFlow.current });
+      expectedDutyCycle.current = null;
+      setIsFlowPending(false);
+      setIsFlowShaking(true);
+      setTimeout(() => setIsFlowShaking(false), 500);
+    }, 2000);
+  };
 
   // Derive local UI flags from session snapshot state on initial load
   useEffect(() => {
@@ -1692,7 +1749,7 @@ export function ControlPlane() {
             </button>
           </div>
 
-          <div className="target-flow-control">
+          <div className={`target-flow-control ${isFlowShaking ? 'flow-shake' : ''}`}>
             <label htmlFor="target-flow-input">Target Flow (L/Hr)</label>
             <div className="target-flow-input-group">
               <input
@@ -1701,19 +1758,13 @@ export function ControlPlane() {
                 min="0"
                 max={selectedPump?.maxFlowRate ?? 100}
                 step="0.1"
-                value={targetFlow}
+                value={localSliderValue}
                 onChange={(e) => {
-                  const value = parseFloat(e.target.value);
-                  setTargetFlow(value);
-                  sendMessage({ type: 'control', command: 'set_target_flow', value });
-                  // Debounced input_activity — only send once per interaction
-                  if (!flowActivityTimer.current) {
-                    sendMessage({ type: 'input_activity', elementId: 'set_target_flow' });
-                  }
-                  if (flowActivityTimer.current) clearTimeout(flowActivityTimer.current);
-                  flowActivityTimer.current = setTimeout(() => { flowActivityTimer.current = null; }, 500);
+                  setLocalSliderValue(parseFloat(e.target.value));
                 }}
-                className="target-flow-slider"
+                onMouseUp={() => commitFlowRate(localSliderValue)}
+                onTouchEnd={() => commitFlowRate(localSliderValue)}
+                className={`target-flow-slider ${isFlowPending ? 'flow-pending' : ''}`}
                 data-element-id="set_target_flow"
               />
               <input
@@ -1722,16 +1773,18 @@ export function ControlPlane() {
                 min="0"
                 max={selectedPump?.maxFlowRate ?? 100}
                 step="0.1"
-                value={targetFlow}
+                value={localSliderValue}
                 onChange={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
-                  const maxFlow = selectedPump?.maxFlowRate ?? 100;
-                  const clampedValue = Math.max(0, Math.min(maxFlow, value));
-                  setTargetFlow(clampedValue);
-                  sendMessage({ type: 'control', command: 'set_target_flow', value: clampedValue });
-                  sendMessage({ type: 'input_activity', elementId: 'set_target_flow' });
+                  setLocalSliderValue(parseFloat(e.target.value) || 0);
                 }}
-                className="target-flow-input"
+                onBlur={() => commitFlowRate(localSliderValue)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    commitFlowRate(localSliderValue);
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                className={`target-flow-input ${isFlowPending ? 'flow-pending' : ''}`}
                 data-element-id="set_target_flow"
               />
             </div>

@@ -11,6 +11,7 @@ export interface PumpData {
   temperature?: number;
   voltage?: number;
   current?: number;
+  pumpDutyCycle?: number;
   [key: string]: number | boolean | string | undefined;
 }
 

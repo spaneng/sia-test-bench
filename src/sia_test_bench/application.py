@@ -1,6 +1,8 @@
 import asyncio
+import json
 import logging
 import time
+from pathlib import Path
 
 from pydoover.docker import Application
 from pydoover.docker.device_agent.device_agent import DeviceAgentInterface
@@ -42,6 +44,13 @@ class SiaTestBenchApplication(Application):
                 tag_key, default=default, app_key=source_app_key,
             )
         return self.get_tag(tag_key, source_app_key, default=default)
+
+    async def set_data_tag(self, tag_key: str, value, app_key: str):
+        """Write a tag to the remote data DDA, or locally if Data DDA is unset."""
+        if self.remote_tag_manager is not None:
+            await self.remote_tag_manager.set_tag(tag_key, value, app_key=app_key, flush=True)
+        else:
+            await self.set_tag(tag_key, value, app_key)
 
     async def setup(self):
         self.started = time.time()
@@ -97,11 +106,27 @@ class SiaTestBenchApplication(Application):
 
         pulse_source = self._safe_config(self.config.pulse_source, "flow")
 
+        # Current sensor app keys mapped by supply voltage
+        self.current_draw_apps = {
+            "24VDC": self._safe_config(self.config.current_draw_24vdc_app),
+            "12VDC": self._safe_config(self.config.current_draw_12vdc_app),
+            "240VAC": self._safe_config(self.config.current_draw_240vac_app),
+        }
+        self.active_supply_voltage = None  # Set when a pump is selected
+
+        # Load pumps config for voltage lookup
+        pumps_config_path = Path(__file__).parent / "pumps_config.json"
+        try:
+            with open(pumps_config_path) as f:
+                self.pumps_config = json.load(f)
+        except Exception as e:
+            log.warning(f"Could not load pumps_config.json: {e}")
+            self.pumps_config = []
+
         self.flow_pulse_detector = None
-        self.current_draw_pulse_detector = None
+        self.current_draw_pulse_detectors = {}
 
         flow_app_key = self._safe_config(self.config.flow_meter_sensor_app)
-        current_draw_app_key = self._safe_config(self.config.current_draw_app)
 
         if pulse_source in ("flow", "both") and flow_app_key:
             self.flow_pulse_detector = PulseRateDetector()
@@ -112,19 +137,39 @@ class SiaTestBenchApplication(Application):
                 data_dda_uri=dda_uri,
             )
 
-        if pulse_source in ("current_draw", "both") and current_draw_app_key:
-            self.current_draw_pulse_detector = PulseRateDetector()
-            self.current_draw_pulse_detector.subscribe(
-                self,
-                tag_key="value",
-                app_key=current_draw_app_key,
-                data_dda_uri=dda_uri,
-            )
+        if pulse_source in ("current_draw", "both"):
+            for voltage, app_key in self.current_draw_apps.items():
+                if app_key:
+                    detector = PulseRateDetector()
+                    detector.subscribe(
+                        self,
+                        tag_key="value",
+                        app_key=app_key,
+                        data_dda_uri=dda_uri,
+                    )
+                    self.current_draw_pulse_detectors[voltage] = detector
 
         self.state = SiaTestBenchState(app=self)
         self.server = TestBenchServer(state=self.state, app=self)
         await self.server.setup()
         
+    def get_active_current_draw_app(self):
+        """Return the current draw app key for the active supply voltage."""
+        if self.active_supply_voltage:
+            return self.current_draw_apps.get(self.active_supply_voltage)
+        return None
+
+    def set_active_supply_voltage(self, pump_id: str):
+        """Look up the selected pump's supplyVoltage and set it as active."""
+        for pump in self.pumps_config:
+            if pump.get("id") == pump_id:
+                voltage = pump.get("supplyVoltage")
+                if voltage:
+                    self.active_supply_voltage = voltage
+                    log.info(f"Active supply voltage set to {voltage} for pump {pump_id}")
+                return
+        log.warning(f"Pump {pump_id} not found in pumps_config, supply voltage unchanged")
+
     async def set_ui_pump_params(self, params):
         self.ui_pump_params = params
         
@@ -151,7 +196,7 @@ class SiaTestBenchApplication(Application):
             pressure_app = self._safe_config(self.config.pressure_app)
             tank_app = self._safe_config(self.config.tank_level_app)
             flow_app = self._safe_config(self.config.flow_meter_sensor_app)
-            current_app = self._safe_config(self.config.current_draw_app)
+            current_app = self.get_active_current_draw_app()
             pump_app = self._safe_config(self.config.pump_controller_app)
 
             pressure = self.get_data_tag("value", pressure_app) if pressure_app else None
@@ -169,7 +214,8 @@ class SiaTestBenchApplication(Application):
                 pump_duty_cycle = round(pump_duty_cycle * 100, 2)
                 
             flow_pulse = self.flow_pulse_detector.pulse_rate if self.flow_pulse_detector else None
-            current_draw_pulse = self.current_draw_pulse_detector.pulse_rate if self.current_draw_pulse_detector else None
+            active_cd_detector = self.current_draw_pulse_detectors.get(self.active_supply_voltage) if self.active_supply_voltage else None
+            current_draw_pulse = active_cd_detector.pulse_rate if active_cd_detector else None
 
             if flow_pulse is not None:
                 await self.set_tag("flow_pulse", flow_pulse)
@@ -251,18 +297,17 @@ class SiaTestBenchApplication(Application):
         """Cleanup resources when shutting down."""
         if self.flow_pulse_detector:
             await self.flow_pulse_detector.stop()
-        if self.current_draw_pulse_detector:
-            await self.current_draw_pulse_detector.stop()
+        for detector in self.current_draw_pulse_detectors.values():
+            await detector.stop()
         if self.server:
             await self.server.cleanup()
             
     async def set_flow_rate(self, flow_rate: float):
-        #flow rate needs to be normalized to the UI max flow rate
         pump_app = self._safe_config(self.config.pump_controller_app)
-        if await self.get_ui_max_flow_rate() is not None and pump_app:
-            duty_cycle = flow_rate / await self.get_ui_max_flow_rate()
-            flow_rate = duty_cycle * self.pump_max
-            await self.set_tag("TargetRate", flow_rate, pump_app)
+        ui_max = await self.get_ui_max_flow_rate()
+        if ui_max is not None and ui_max > 0 and pump_app:
+            duty_cycle_pct = (flow_rate / ui_max) * 100
+            await self.set_data_tag("TargetRatePercentageWriteTag", duty_cycle_pct, pump_app)
 
     def check_off_command(self):
         return False
@@ -392,13 +437,13 @@ class SiaTestBenchApplication(Application):
         log.info("Stopping pump")
         pump_app = self._safe_config(self.config.pump_controller_app)
         if pump_app:
-            await self.set_tag("StateWriteTag", 0, pump_app)
+            await self.set_data_tag("StateWriteTag", 0, pump_app)
 
     async def start_pump(self):
         log.info("Starting pump")
         pump_app = self._safe_config(self.config.pump_controller_app)
         if pump_app:
-            await self.set_tag("StateWriteTag", 2, pump_app)
+            await self.set_data_tag("StateWriteTag", 2, pump_app)
 
     def clear_shared_testmode(self):
         self.shared_testmode = "off"

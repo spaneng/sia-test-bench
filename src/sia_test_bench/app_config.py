@@ -28,9 +28,17 @@ class SiaTestBenchConfig(config.Schema):
         "Flow Meter Sensor App",
         description="The flow sensor application",
     )
-    current_draw_app = config.Application(
-        "Current Draw App",
-        description="The current draw application",
+    current_draw_24vdc_app = config.Application(
+        "Current Draw 24VDC App",
+        description="The current transducer application for 24VDC pumps",
+    )
+    current_draw_12vdc_app = config.Application(
+        "Current Draw 12VDC App",
+        description="The current transducer application for 12VDC pumps",
+    )
+    current_draw_240vac_app = config.Application(
+        "Current Draw 240VAC App",
+        description="The current transducer application for 240VAC pumps",
     )
     pulse_source = config.Enum(
         "Pulse Detection Source",

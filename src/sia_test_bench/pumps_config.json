@@ -7,7 +7,8 @@
     "maxFlowRate": 0.96,
     "maxPressure": 750,
     "currentDraw": 1,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   },
   {
     "id": "2",
@@ -17,7 +18,8 @@
     "maxFlowRate": 3.84,
     "maxPressure": 750,
     "currentDraw": 2.5,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   },
   {
     "id": "3",
@@ -27,7 +29,8 @@
     "maxFlowRate": 8.64,
     "maxPressure": 750,
     "currentDraw": 3.5,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   },
   {
     "id": "4",
@@ -37,7 +40,8 @@
     "maxFlowRate": 15.36,
     "maxPressure": 750,
     "currentDraw": 4.5,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   },
   {
     "id": "5",
@@ -47,7 +51,8 @@
     "maxFlowRate": 34.56,
     "maxPressure": 750,
     "currentDraw": 7.5,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   },
   {
     "id": "6",
@@ -57,7 +62,8 @@
     "maxFlowRate": 61.44,
     "maxPressure": 750,
     "currentDraw": 10.5,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   },
   {
     "id": "7",
@@ -67,7 +73,8 @@
     "maxFlowRate": 136.8,
     "maxPressure": 750,
     "currentDraw": 15.5,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   },
   {
     "id": "8",
@@ -77,7 +84,7 @@
     "maxFlowRate": 312,
     "maxPressure": 750,
     "currentDraw": 20.5,
-    "strokeLength": 1.5
+    "strokeLength": 1.5,
+    "supplyVoltage": "24VDC"
   }
 ]
-

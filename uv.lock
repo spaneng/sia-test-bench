@@ -1314,15 +1314,15 @@ wheels = [
 
 [[package]]
 name = "pydoover"
-version = "1.0.0a5"
+version = "1.0.0a7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/62/12/650a8525f61e38a55fe3cc09d050282e266f86e8e803edbaa99755d7755b/pydoover-1.0.0a5.tar.gz", hash = "sha256:7d015f78fae228010666b8e123e756e85b9959afc7d5c4b3bf152b95cdfc3562", size = 455034, upload-time = "2026-04-01T23:58:32.802Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7c/7d/71e88b86989dae2e4a6db3d8ebe57566e1ac09d9a8afe1d4ab0eb69d0a07/pydoover-1.0.0a7.tar.gz", hash = "sha256:096d0f91503e263fbe5e0025112fc1196042474e671e1bf54773efcd40595a87", size = 456612, upload-time = "2026-04-09T06:57:09.566Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/4a/3f472424ab1984a3d13634ff3f376218a1ff9f4b33392faa0d4766ed135c/pydoover-1.0.0a5-py3-none-any.whl", hash = "sha256:cd3e847adf309e1c821fcf6178e057bf0942c569c0549564cd5191903da9e4f5", size = 237740, upload-time = "2026-04-01T23:58:33.741Z" },
+    { url = "https://files.pythonhosted.org/packages/19/c6/87aaf324d2e10644a69cf3f845ca973a7505f83561380c6204ab8a1ba229/pydoover-1.0.0a7-py3-none-any.whl", hash = "sha256:ec0841a86cd131e150a94024458799deb88772b3d14768f89abda5473cc455c4", size = 237769, upload-time = "2026-04-09T06:57:08.176Z" },
 ]
 
 [[package]]
@@ -1459,7 +1459,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "matplotlib", specifier = ">=3.7.0" },
     { name = "numpy", specifier = ">=1.24.0" },
-    { name = "pydoover", specifier = "==1.0.0a5" },
+    { name = "pydoover", specifier = "==1.0.0a7" },
     { name = "textual", specifier = ">=8.2.3" },
     { name = "transitions", specifier = ">=0.9.2" },
     { name = "weasyprint", specifier = ">=60.0" },

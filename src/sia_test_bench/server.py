@@ -267,6 +267,9 @@ class TestBenchServer:
                 if pump_id:
                     self.selected_pump_id = pump_id
                     log.info(f"Pump selected: {pump_id}")
+                    # Set active supply voltage on the application
+                    if self.application:
+                        self.application.set_active_supply_voltage(pump_id)
                     # Broadcast to all other clients
                     await self.broadcast_to_others(ws, {
                         'type': 'pump_selected',

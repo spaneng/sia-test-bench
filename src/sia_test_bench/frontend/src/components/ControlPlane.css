@@ -1225,3 +1225,30 @@
   50% { box-shadow: 0 0 8px 3px rgba(16, 185, 129, 0.5); }
   100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
+
+/* Flow pending — greyed out while waiting for confirmation */
+.flow-pending {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.flow-pending.target-flow-slider::-webkit-slider-thumb {
+  background: #9ca3af;
+}
+
+.flow-pending.target-flow-slider::-moz-range-thumb {
+  background: #9ca3af;
+}
+
+/* Flow shake — horizontal shake on timeout/revert */
+@keyframes flowShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+.flow-shake {
+  animation: flowShake 0.5s ease-in-out;
+}

@@ -280,6 +280,11 @@ class TestBenchServer:
                 params = data.get('params', {})
                 if self.application:
                     await self.application.set_ui_pump_params(params)
+                    # Set active supply voltage from user selection
+                    supply_voltage = params.get('supply_voltage')
+                    if supply_voltage:
+                        self.application.active_supply_voltage = supply_voltage
+                        log.info(f"Active supply voltage set to {supply_voltage}")
                     log.info(f"Pump parameters saved: {params}")
                 else:
                     log.warning("Application reference not set, cannot save pump parameters")

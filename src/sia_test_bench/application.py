@@ -45,10 +45,16 @@ class SiaTestBenchApplication(Application):
             )
         return self.get_tag(tag_key, source_app_key, default=default)
 
-    async def set_data_tag(self, tag_key: str, value, app_key: str):
-        """Write a tag to the remote data DDA, or locally if Data DDA is unset."""
+    async def set_data_tag(self, tag_key: str, value, app_key: str, only_if_changed: bool = True):
+        """Write a tag to the remote data DDA, or locally if Data DDA is unset.
+
+        For command/write tags (e.g. StateWriteTag), pass only_if_changed=False so
+        the write is always published, even if the cached value matches.
+        """
         if self.remote_tag_manager is not None:
-            await self.remote_tag_manager.set_tag(tag_key, value, app_key=app_key, flush=True)
+            await self.remote_tag_manager.set_tag(
+                tag_key, value, app_key=app_key, only_if_changed=only_if_changed, flush=True
+            )
         else:
             await self.set_tag(tag_key, value, app_key)
 
@@ -204,14 +210,18 @@ class SiaTestBenchApplication(Application):
             flow_rate = self.get_data_tag("value", flow_app) if flow_app else None
             current_draw = self.get_data_tag("value", current_app) if current_app else None
             pump_duty_cycle = self.get_data_tag("PumpDutyCycle_ReadOnly", pump_app) if pump_app else None
+            target_pump_duty_cycle = self.get_data_tag("TargetPumpDutyCycle_ReadOnly", pump_app) if pump_app else None
             pump_state = self.get_data_tag("AppState", pump_app) if pump_app else None
 
             # Normalize pump_state: convert "auto" to "on" for consistency
             if pump_state == "auto":
                 pump_state = "on"
-            
+
             if pump_duty_cycle is not None:
                 pump_duty_cycle = round(pump_duty_cycle * 100, 2)
+
+            if target_pump_duty_cycle is not None:
+                target_pump_duty_cycle = round(target_pump_duty_cycle * 100, 2)
                 
             flow_pulse = self.flow_pulse_detector.pulse_rate if self.flow_pulse_detector else None
             active_cd_detector = self.current_draw_pulse_detectors.get(self.active_supply_voltage) if self.active_supply_voltage else None
@@ -237,12 +247,13 @@ class SiaTestBenchApplication(Application):
             flow_rate = None
             current_draw = None
             pump_duty_cycle = None
+            target_pump_duty_cycle = None
             pulse_rate = None
             valve_state = None
             pump_state = None
             self.current_pressure = None
             self.current_flow = None
-        
+
         # Create current data object for comparison
         current_data = {
             'pressure': pressure,
@@ -250,6 +261,7 @@ class SiaTestBenchApplication(Application):
             'flowRate': flow_rate,
             'currentDraw': current_draw,
             'pumpDutyCycle': pump_duty_cycle,
+            'targetPumpDutyCycle': target_pump_duty_cycle,
             'pulseRate': pulse_rate,
             'valveState': valve_state,
             'pumpState': pump_state,
@@ -279,11 +291,12 @@ class SiaTestBenchApplication(Application):
                 'flowRate': flow_rate,
                 'currentDraw': current_draw,
                 'pumpDutyCycle': pump_duty_cycle,
+                'targetPumpDutyCycle': target_pump_duty_cycle,
                 'pulseRate': pulse_rate,
                 'valveState': valve_state,
                 'pumpState': pump_state,
             }
-            
+
             # Push data to frontend via WebSocket
             await self.server.push_data(data)
             
@@ -307,7 +320,7 @@ class SiaTestBenchApplication(Application):
         ui_max = await self.get_ui_max_flow_rate()
         if ui_max is not None and ui_max > 0 and pump_app:
             duty_cycle_pct = (flow_rate / ui_max) * 100
-            await self.set_data_tag("TargetRatePercentageWriteTag", duty_cycle_pct, pump_app)
+            await self.set_data_tag("TargetRatePercentageWriteTag", duty_cycle_pct, pump_app, only_if_changed=False)
 
     def check_off_command(self):
         return False
@@ -434,16 +447,22 @@ class SiaTestBenchApplication(Application):
         return self.shared_flow_accuracy_complete_acknowledged
 
     async def stop_pump(self):
-        log.info("Stopping pump")
         pump_app = self._safe_config(self.config.pump_controller_app)
+        log.info(f"Stopping pump: app_key={pump_app}")
         if pump_app:
-            await self.set_data_tag("StateWriteTag", 0, pump_app)
+            await self.set_data_tag("StateWriteTag", 0, pump_app, only_if_changed=False)
+            log.info(f"StateWriteTag=0 written to {pump_app}")
+        else:
+            log.warning("No pump_controller_app configured, cannot stop pump")
 
     async def start_pump(self):
-        log.info("Starting pump")
         pump_app = self._safe_config(self.config.pump_controller_app)
+        log.info(f"Starting pump: app_key={pump_app}")
         if pump_app:
-            await self.set_data_tag("StateWriteTag", 2, pump_app)
+            await self.set_data_tag("StateWriteTag", 2, pump_app, only_if_changed=False)
+            log.info(f"StateWriteTag=2 written to {pump_app}")
+        else:
+            log.warning("No pump_controller_app configured, cannot start pump")
 
     def clear_shared_testmode(self):
         self.shared_testmode = "off"

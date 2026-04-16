@@ -12,6 +12,7 @@ export interface PumpData {
   voltage?: number;
   current?: number;
   pumpDutyCycle?: number;
+  targetPumpDutyCycle?: number;
   [key: string]: number | boolean | string | undefined;
 }
 
@@ -25,6 +26,7 @@ export interface PumpType {
   maxPressure?: number;
   currentDraw?: number;
   strokeLength?: number;
+  supplyVoltage?: string;
 }
 
 export type TestView = 'none' | 'auto' | 'max_pressure' | 'max_flow' | 'flow_accuracy';

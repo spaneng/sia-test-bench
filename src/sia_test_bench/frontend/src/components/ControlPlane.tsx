@@ -77,6 +77,7 @@ export function ControlPlane() {
     maxPressure?: number;
     currentDraw?: number;
     strokeLength?: number;
+    supplyVoltage?: string;
   } | null>(null);
   const hasInitializedPumpInfo = useRef<string | null>(null);
   const downloadedReportUrl = useRef<string | null>(null);
@@ -88,6 +89,19 @@ export function ControlPlane() {
   const previousFlow = useRef<number>(targetFlow);
   const expectedDutyCycle = useRef<number | null>(null);
   const confirmTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasInitializedSlider = useRef(false);
+
+  // Seed slider from current target duty cycle on first render with data
+  useEffect(() => {
+    if (hasInitializedSlider.current) return;
+    const dutyCycle = latestData?.targetPumpDutyCycle;
+    if (dutyCycle == null || dutyCycle === undefined) return;
+    const maxFlow = selectedPump?.maxFlowRate ?? 100;
+    const flowFromDuty = (dutyCycle / 100) * maxFlow;
+    setLocalSliderValue(parseFloat(flowFromDuty.toFixed(2)));
+    setTargetFlow(parseFloat(flowFromDuty.toFixed(2)));
+    hasInitializedSlider.current = true;
+  }, [latestData, selectedPump]);
 
   // Sync localSliderValue from external targetFlow changes when not pending
   useEffect(() => {
@@ -113,14 +127,19 @@ export function ControlPlane() {
   const commitFlowRate = (value: number) => {
     const maxFlow = selectedPump?.maxFlowRate ?? 100;
     const clamped = Math.max(0, Math.min(maxFlow, value));
-    previousFlow.current = targetFlow;
-    const dutyCyclePct = maxFlow > 0 ? (clamped / maxFlow) * 100 : 0;
-    expectedDutyCycle.current = dutyCyclePct;
 
     setTargetFlow(clamped);
     setLocalSliderValue(clamped);
     sendMessage({ type: 'control', command: 'set_target_flow', value: clamped });
     sendMessage({ type: 'input_activity', elementId: 'set_target_flow' });
+
+    // Only engage pending/confirmation when pumpDutyCycle is available in the data stream
+    const hasDutyCycleFeedback = latestData?.pumpDutyCycle !== undefined && latestData?.pumpDutyCycle !== null;
+    if (!hasDutyCycleFeedback) return;
+
+    previousFlow.current = targetFlow;
+    const dutyCyclePct = maxFlow > 0 ? (clamped / maxFlow) * 100 : 0;
+    expectedDutyCycle.current = dutyCyclePct;
     setIsFlowPending(true);
 
     // Start timeout
@@ -458,6 +477,7 @@ export function ControlPlane() {
           maxPressure: selectedPump.maxPressure,
           currentDraw: selectedPump.currentDraw,
           strokeLength: selectedPump.strokeLength,
+          supplyVoltage: selectedPump.supplyVoltage || '24VDC',
         });
       }
     } else {
@@ -712,6 +732,7 @@ export function ControlPlane() {
         max_pressure: editablePumpData.maxPressure,
         current_draw: editablePumpData.currentDraw,
         stroke_length: editablePumpData.strokeLength,
+        supply_voltage: editablePumpData.supplyVoltage,
       };
       sendMessage({ 
         type: 'pump', 
@@ -729,7 +750,7 @@ export function ControlPlane() {
     
     setEditablePumpData({
       ...editablePumpData,
-      [field]: value === '' ? undefined : (typeof value === 'string' && field !== 'name' && field !== 'model' && field !== 'serialNumber' ? parseFloat(value) || undefined : value),
+      [field]: value === '' ? undefined : (typeof value === 'string' && field !== 'name' && field !== 'model' && field !== 'serialNumber' && field !== 'supplyVoltage' ? parseFloat(value) || undefined : value),
     });
   };
 
@@ -916,6 +937,20 @@ export function ControlPlane() {
             />
           </div>
           
+          <div className="pump-info-form-group">
+            <label htmlFor="pump-supply-voltage" className="pump-info-form-label">Supply Voltage:</label>
+            <select
+              id="pump-supply-voltage"
+              className="pump-info-form-input"
+              value={editablePumpData.supplyVoltage || '24VDC'}
+              onChange={(e) => handlePumpDataChange('supplyVoltage', e.target.value)}
+            >
+              <option value="24VDC">24VDC</option>
+              <option value="12VDC">12VDC</option>
+              <option value="240VAC">240VAC</option>
+            </select>
+          </div>
+
           <div className="pump-info-details">
             <div className="pump-info-detail-item">
               <label htmlFor="pump-max-rpm" className="pump-info-detail-label">Max RPM:</label>
@@ -1067,6 +1102,12 @@ export function ControlPlane() {
               <div className="pump-detail-item">
                 <span className="pump-detail-label">Max Pressure:</span>
                 <span className="pump-detail-value">{selectedPump.maxPressure} PSI</span>
+              </div>
+            )}
+            {selectedPump.supplyVoltage && (
+              <div className="pump-detail-item">
+                <span className="pump-detail-label">Supply Voltage:</span>
+                <span className="pump-detail-value">{selectedPump.supplyVoltage}</span>
               </div>
             )}
             {selectedPump.currentDraw !== undefined && (

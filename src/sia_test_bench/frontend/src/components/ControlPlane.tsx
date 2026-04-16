@@ -81,8 +81,6 @@ export function ControlPlane() {
   const hasInitializedPumpInfo = useRef<string | null>(null);
   const downloadedReportUrl = useRef<string | null>(null);
   const hasAppliedSnapshot = useRef(false);
-  const flowActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Flow pending / confirmation state
   const [localSliderValue, setLocalSliderValue] = useState(targetFlow);
   const [isFlowPending, setIsFlowPending] = useState(false);

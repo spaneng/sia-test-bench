@@ -284,6 +284,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   },
   
   // Control actions
+  // Note: pumpState is NOT updated from the HTTP response because the backend
+  // returns its stale/local pump_state before the remote controller has
+  // acknowledged the command. The authoritative pumpState arrives via the
+  // WebSocket data feed (handled in useWebSocket.ts) within ~500ms.
   startPump: async () => {
     try {
       const response = await fetch(`${API_URL}/api/pump/start`, {
@@ -292,17 +296,14 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
           'Content-Type': 'application/json',
         },
       });
-      if (response.ok) {
-        const data = await response.json();
-        set({ pumpState: data.state, isRunning: data.state === 'on' });
-      } else {
+      if (!response.ok) {
         console.error('Failed to start pump');
       }
     } catch (error) {
       console.error('Error starting pump:', error);
     }
   },
-  
+
   stopPump: async () => {
     try {
       const response = await fetch(`${API_URL}/api/pump/stop`, {
@@ -311,10 +312,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
           'Content-Type': 'application/json',
         },
       });
-      if (response.ok) {
-        const data = await response.json();
-        set({ pumpState: data.state, isRunning: data.state === 'on' });
-      } else {
+      if (!response.ok) {
         console.error('Failed to stop pump');
       }
     } catch (error) {

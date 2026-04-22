@@ -35,6 +35,14 @@ plt.rcParams.update({
 })
 
 
+def _load_logo_base64(template_dir: Path) -> Optional[str]:
+    """Load the Solar Injection logo from the assets directory as base64."""
+    logo_path = template_dir.parent / 'assets' / 'Solar-Injection-Logo-01-768x333.png'
+    if not logo_path.exists():
+        return None
+    return base64.b64encode(logo_path.read_bytes()).decode('utf-8')
+
+
 def render_test_chart_png(
     time_series: List[float],
     flow_lpm: List[float],
@@ -44,34 +52,34 @@ def render_test_chart_png(
 ) -> bytes:
     """
     Render a test chart as PNG bytes with dual Y-axes.
-    
+
     Args:
         time_series: Array of time values (seconds or timestamps)
         flow_lpm: Flow rate series in L/min
         pressure_kpa: Pressure series in kPa
         figure_size: Tuple of (width, height) in inches (default: A4 landscape)
         test_name: Optional test name to include in the title
-    
+
     Returns:
         PNG image bytes
     """
     # Create figure with specified size
     fig, ax1 = plt.subplots(figsize=figure_size, facecolor='white')
-    
-    # Plot flow on left Y-axis
-    color_flow = '#1f77b4'  # Blue
+
+    # Plot flow on left Y-axis (Solar Injection brand orange)
+    color_flow = '#FF8000'
     ax1.set_xlabel('Time (s)', fontweight='bold')
     ax1.set_ylabel('Flow Rate (L/min)', color=color_flow, fontweight='bold')
-    line1 = ax1.plot(time_series, flow_lpm, color=color_flow, linewidth=1.5, label='Flow Rate')
+    line1 = ax1.plot(time_series, flow_lpm, color=color_flow, linewidth=1.8, label='Flow Rate')
     ax1.tick_params(axis='y', labelcolor=color_flow)
     ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-    ax1.set_facecolor('#fafafa')
-    
-    # Create second Y-axis for pressure
+    ax1.set_facecolor('#F9F9F9')
+
+    # Create second Y-axis for pressure (brand black/charcoal)
     ax2 = ax1.twinx()
-    color_pressure = '#d62728'  # Red
+    color_pressure = '#1a1a1a'
     ax2.set_ylabel('Pressure (kPa)', color=color_pressure, fontweight='bold')
-    line2 = ax2.plot(time_series, pressure_kpa, color=color_pressure, linewidth=1.5, label='Pressure')
+    line2 = ax2.plot(time_series, pressure_kpa, color=color_pressure, linewidth=1.8, label='Pressure')
     ax2.tick_params(axis='y', labelcolor=color_pressure)
     
     # Add title with test name if provided
@@ -140,14 +148,18 @@ def generate_report_pdf(
     
     # Load template
     template = env.get_template('report.html')
-    
+
     # Encode chart as base64
     chart_base64 = base64.b64encode(chart_png).decode('utf-8')
-    
+
+    # Load Solar Injection logo as base64 so it's embedded in the PDF (offline-safe)
+    logo_base64 = _load_logo_base64(template_dir)
+
     # Prepare template context
     context = {
         'test_record': test_record,
         'chart_base64': chart_base64,
+        'logo_base64': logo_base64,
         'generation_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'pump_metadata': test_record.get('pump_metadata', {}),
         'metrics': test_record.get('metrics', {}),

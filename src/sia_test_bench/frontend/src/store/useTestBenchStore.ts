@@ -31,6 +31,36 @@ export interface PumpType {
 
 export type TestView = 'none' | 'auto' | 'max_pressure' | 'max_flow' | 'flow_accuracy';
 
+export type MaxPressureVerifyStage = 'checking' | 'building' | 'stabilising';
+
+export interface MaxPressureVerifyStatus {
+  stage: MaxPressureVerifyStage;
+  stageNumber: 1 | 2 | 3;
+  elapsed: number;
+  warning: boolean;
+  baseline: number | null;
+  current: number | null;
+  peak: number | null;
+  growth: number | null;
+  growthTarget: number | null;
+  timeStable: number | null;
+  stabiliseWindow: number;
+}
+
+export const DEFAULT_VERIFY_STATUS: MaxPressureVerifyStatus = {
+  stage: 'checking',
+  stageNumber: 1,
+  elapsed: 0,
+  warning: false,
+  baseline: null,
+  current: null,
+  peak: null,
+  growth: null,
+  growthTarget: null,
+  timeStable: null,
+  stabiliseWindow: 5,
+};
+
 export interface TestBenchState {
   // Connection state
   isConnected: boolean;
@@ -49,6 +79,7 @@ export interface TestBenchState {
   // Test state
   currentTestView: TestView;
   stateMachineState: string;  // Backend state machine state (e.g., 'off', 'max_pressure_start', 'max_pressure_run', etc.)
+  maxPressureVerifyStatus: MaxPressureVerifyStatus;
   maxPressureStabiliseProgress: number;
   maxPressureProgress: number;
   maxFlowStabiliseProgress: number;
@@ -86,6 +117,7 @@ export interface TestBenchState {
   setTargetFlow: (flow: number) => void;
   setStateMachineState: (state: string) => void;
   setTestProgress: (test: string, progress: number) => void;
+  setMaxPressureVerifyStatus: (status: MaxPressureVerifyStatus) => void;
   setTestComplete: (test: string) => void;
   resetTestProgress: () => void;
   fetchAvailablePumps: () => Promise<void>;
@@ -161,6 +193,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   targetFlow: 0,
   currentTestView: 'none',
   stateMachineState: 'off',
+  maxPressureVerifyStatus: DEFAULT_VERIFY_STATUS,
   maxPressureStabiliseProgress: 0,
   maxPressureProgress: 0,
   maxFlowStabiliseProgress: 0,
@@ -200,6 +233,8 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   
   setStateMachineState: (state) => set({ stateMachineState: state }),
   
+  setMaxPressureVerifyStatus: (status) => set({ maxPressureVerifyStatus: status }),
+
   setTestProgress: (test, progress) => {
     if (test === 'max_pressure_stabilise') {
       set({ maxPressureStabiliseProgress: progress });
@@ -246,7 +281,8 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   
   clearData: () => set({ dataHistory: [], latestData: null }),
   
-  resetTestProgress: () => set({ 
+  resetTestProgress: () => set({
+    maxPressureVerifyStatus: DEFAULT_VERIFY_STATUS,
     maxPressureStabiliseProgress: 0,
     maxPressureProgress: 0,
     maxFlowStabiliseProgress: 0,

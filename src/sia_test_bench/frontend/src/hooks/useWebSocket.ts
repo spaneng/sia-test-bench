@@ -74,9 +74,27 @@ export function useWebSocket() {
                 setTargetFlow(data.targetFlow);
               }
             } else if (data.type === 'test_progress') {
-              // Forward test progress to the store
-              const { setTestProgress } = useTestBenchStore.getState();
-              setTestProgress(data.test, data.progress);
+              // Max-pressure verify carries a full diagnostic payload instead
+              // of a progress percentage.
+              if (data.test === 'max_pressure_verify') {
+                const { setMaxPressureVerifyStatus } = useTestBenchStore.getState();
+                setMaxPressureVerifyStatus({
+                  stage: data.stage,
+                  stageNumber: data.stage_number ?? 1,
+                  elapsed: data.elapsed ?? 0,
+                  warning: Boolean(data.warning),
+                  baseline: data.baseline ?? null,
+                  current: data.current ?? null,
+                  peak: data.peak ?? null,
+                  growth: data.growth ?? null,
+                  growthTarget: data.growth_target ?? null,
+                  timeStable: data.time_stable ?? null,
+                  stabiliseWindow: data.stabilise_window ?? 5,
+                });
+              } else {
+                const { setTestProgress } = useTestBenchStore.getState();
+                setTestProgress(data.test, data.progress);
+              }
             } else if (data.type === 'test_complete') {
               // Forward test completion to the store
               const { setTestComplete } = useTestBenchStore.getState();
@@ -137,6 +155,24 @@ export function useWebSocket() {
                 for (const test of Object.keys(data.completion)) {
                   store.setTestComplete(test);
                 }
+              }
+
+              // Restore max-pressure verify stage for reconnecting clients
+              if (data.maxPressureVerify) {
+                const v = data.maxPressureVerify;
+                store.setMaxPressureVerifyStatus({
+                  stage: v.stage,
+                  stageNumber: v.stage_number ?? 1,
+                  elapsed: v.elapsed ?? 0,
+                  warning: Boolean(v.warning),
+                  baseline: v.baseline ?? null,
+                  current: v.current ?? null,
+                  peak: v.peak ?? null,
+                  growth: v.growth ?? null,
+                  growthTarget: v.growth_target ?? null,
+                  timeStable: v.time_stable ?? null,
+                  stabiliseWindow: v.stabilise_window ?? 5,
+                });
               }
 
               // Derive the correct test view from state machine state

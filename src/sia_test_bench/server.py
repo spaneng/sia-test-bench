@@ -123,7 +123,9 @@ class TestBenchServer:
 
     async def websocket_handler(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connections."""
-        ws = web.WebSocketResponse()
+        # heartbeat keeps the WS alive across NAT/Wi-Fi idle timeouts
+        # and lets both sides detect a dead connection quickly.
+        ws = web.WebSocketResponse(heartbeat=20.0)
         await ws.prepare(request)
 
         client_id = str(uuid.uuid4())
@@ -349,42 +351,44 @@ class TestBenchServer:
             'state': state
         })
     
+    async def _send_one(self, ws: web.WebSocketResponse, message: str, timeout: float = 2.0):
+        # Dropping a slow client is better than blocking the broadcast loop —
+        # a stuck send_str() (full TCP buffer on a flaky Wi-Fi link) would
+        # otherwise stall every other client and starve the WS heartbeat.
+        try:
+            await asyncio.wait_for(ws.send_str(message), timeout=timeout)
+            return ws, None
+        except (asyncio.TimeoutError, ConnectionResetError, Exception) as e:
+            return ws, e
+
+    async def _broadcast(self, targets, message: str):
+        if not targets:
+            return
+        results = await asyncio.gather(
+            *(self._send_one(ws, message) for ws in targets),
+            return_exceptions=False,
+        )
+        for ws, err in results:
+            if err is None:
+                continue
+            log.warning(f"Dropping WS client {self.client_ids.get(ws, '?')}: {err!r}")
+            self.websockets.discard(ws)
+            self.client_ids.pop(ws, None)
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
     async def broadcast_data(self, data: dict):
         """Broadcast data to all connected WebSocket clients."""
-        if not self.websockets:
-            return
-
-        message = json.dumps(data)
-        disconnected = set()
-
-        for ws in self.websockets:
-            try:
-                await ws.send_str(message)
-            except Exception as e:
-                log.error(f"Error sending data to client: {e}")
-                disconnected.add(ws)
-
-        # Remove disconnected clients
-        self.websockets -= disconnected
+        await self._broadcast(list(self.websockets), json.dumps(data))
 
     async def broadcast_to_others(self, sender: web.WebSocketResponse, data: dict):
         """Broadcast data to all connected WebSocket clients except the sender."""
-        if not self.websockets:
-            return
-
-        message = json.dumps(data)
-        disconnected = set()
-
-        for ws in self.websockets:
-            if ws is sender:
-                continue
-            try:
-                await ws.send_str(message)
-            except Exception as e:
-                log.error(f"Error sending data to client: {e}")
-                disconnected.add(ws)
-
-        self.websockets -= disconnected
+        await self._broadcast(
+            [ws for ws in self.websockets if ws is not sender],
+            json.dumps(data),
+        )
 
     async def broadcast_state(self):
         """Broadcast current state to all connected WebSocket clients."""
@@ -453,6 +457,12 @@ class TestBenchServer:
         if app and hasattr(app, 'ui_pump_params'):
             pump_params = app.ui_pump_params
 
+        # Include current max_pressure_verify stage so reconnecting clients
+        # land on the right message instead of the default "checking".
+        verify_status = None
+        if app and sm_state == 'max_pressure_verify':
+            verify_status = app.get_max_pressure_verify_status()
+
         return {
             'type': 'session_snapshot',
             'pumpState': self.pump_state,
@@ -464,6 +474,7 @@ class TestBenchServer:
             'completion': completion,
             'pumpParams': pump_params,
             'selectedPumpId': self.selected_pump_id,
+            'maxPressureVerify': verify_status,
         }
 
     async def get_pumps_handler(self, request: web.Request) -> web.Response:

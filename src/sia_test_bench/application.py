@@ -19,6 +19,16 @@ log = logging.getLogger()
 # Test duration constants (in seconds) - change these to adjust test lengths
 MAX_PRESSURE_STABILISE_DURATION = 10.0
 MAX_PRESSURE_RUN_DURATION = 10.0
+
+# Max-pressure verify stage thresholds
+# Stage 1 -> 2: pressure must grow by this fraction of target from baseline
+MAX_PRESSURE_BUILD_THRESHOLD_PCT = 0.10
+# Stage 2 -> 3: peak must not have grown (beyond tolerance) for this long
+MAX_PRESSURE_STABILISE_WINDOW = 5.0
+# PSI tolerance used when deciding if peak has "grown" (ignores sensor noise)
+MAX_PRESSURE_STABILISE_TOLERANCE_PSI = 2.0
+# After this long without reaching Stage 2, show a "is the pump bled?" warning
+MAX_PRESSURE_BUILD_WARNING_TIME = 120.0
 MAX_FLOW_STABILISE_DURATION = 10.0
 MAX_FLOW_RUN_DURATION = 10.0
 FLOW_ACCURACY_STABILISE_DURATION = 10.0
@@ -66,6 +76,12 @@ class SiaTestBenchApplication(Application):
         self.shared_testmode = "off"
         self.max_pressure_stabilise_start_time = None
         self.max_pressure_run_start_time = None
+        # Max-pressure verify 3-stage tracking
+        self.max_pressure_verify_start_time = None
+        self.max_pressure_verify_baseline = None
+        self.max_pressure_peak = None
+        self.max_pressure_peak_update_time = None
+        self.max_pressure_verify_stage = 'checking'
         self.max_flow_stabilise_start_time = None
         self.max_flow_run_start_time = None
         self.flow_accuracy_stabilise_start_time = None
@@ -182,20 +198,38 @@ class SiaTestBenchApplication(Application):
     async def get_ui_max_flow_rate(self):
         return self.ui_pump_params.get("max_flow_rate")
 
+    async def _update_current_sensor_polling(self):
+        """Drive each current sensor's `polling_frequency` tag based on session/voltage.
+
+        Active sensor (matches active supply voltage, WS client connected) runs at
+        5 Hz so pulse detection has enough samples; others idle at 0.5 Hz.
+        """
+        session_active = bool(self.server and self.server.websockets)
+        for voltage, app_key in self.current_draw_apps.items():
+            if not app_key:
+                continue
+            freq = 5.0 if (session_active and voltage == self.active_supply_voltage) else 0.5
+            try:
+                await self.set_data_tag("polling_frequency", freq, app_key)
+            except Exception as e:
+                log.warning(f"Failed to set polling_frequency on {voltage} sensor ({app_key}): {e}")
+
     async def main_loop(self):
 
         state = await self.state.spin_state()
-        
+
         """Main application loop - called periodically."""
-        
+
         # Push current state machine state to frontend
         await self.server.push_state_machine_state(state)
-        
+
         # Check for state changes and notify frontend
         await self.check_state_changes(state)
-        
+
         # Send test progress updates if in a test run state
         await self.send_test_progress_updates(state)
+
+        await self._update_current_sensor_polling()
         
         # Get tag values for system data
         try:
@@ -350,11 +384,119 @@ class SiaTestBenchApplication(Application):
             return False
     def check_max_pressure_run_ready(self):
         return self.shared_pressure_confirmation
-    def check_max_pressure_verified(self):
-        # Check if current pressure reading meets or exceeds target pressure
+
+    def reset_max_pressure_verify_tracking(self):
+        """Reset 3-stage verify tracking when entering max_pressure_verify."""
+        self.max_pressure_verify_start_time = time.time()
+        self.max_pressure_verify_baseline = None
+        self.max_pressure_peak = None
+        self.max_pressure_peak_update_time = None
+        self.max_pressure_verify_stage = 'checking'
+
+    def _update_max_pressure_verify_state(self):
+        """Update the 3-stage verify state machine based on current pressure.
+
+        Stages:
+          - 'checking'   — pump running, waiting for pressure to grow by
+                           MAX_PRESSURE_BUILD_THRESHOLD_PCT of target from baseline.
+          - 'building'   — pressure is climbing past the 10%% growth threshold.
+          - 'stabilising'— peak pressure has stopped climbing (no growth beyond
+                           tolerance for STABILISE_WINDOW seconds).
+
+        Returns True when the pressure is deemed stable (ready to exit verify).
+        """
         if self.current_pressure is None or self.target_max_pressure is None:
             return False
-        return self.current_pressure >= self.target_max_pressure
+        if self.max_pressure_verify_start_time is None:
+            # Defensive: verify state entered without the on_enter hook firing.
+            self.reset_max_pressure_verify_tracking()
+
+        now = time.time()
+        # Capture baseline on first good reading after entering verify.
+        if self.max_pressure_verify_baseline is None:
+            self.max_pressure_verify_baseline = self.current_pressure
+            self.max_pressure_peak = self.current_pressure
+            self.max_pressure_peak_update_time = now
+
+        # Track peak, resetting the "no growth" timer only when peak grows
+        # beyond the sensor-noise tolerance.
+        if self.current_pressure > (self.max_pressure_peak or 0) + MAX_PRESSURE_STABILISE_TOLERANCE_PSI:
+            self.max_pressure_peak = self.current_pressure
+            self.max_pressure_peak_update_time = now
+        elif self.current_pressure > (self.max_pressure_peak or 0):
+            # Small growth — update peak value but not the timer.
+            self.max_pressure_peak = self.current_pressure
+
+        growth = self.current_pressure - self.max_pressure_verify_baseline
+        build_threshold = self.target_max_pressure * MAX_PRESSURE_BUILD_THRESHOLD_PCT
+
+        # Stage transitions: once we reach 'building' or 'stabilising' we don't
+        # drop back to 'checking'.
+        if self.max_pressure_verify_stage == 'checking' and growth >= build_threshold:
+            self.max_pressure_verify_stage = 'building'
+
+        if self.max_pressure_verify_stage in ('building', 'stabilising'):
+            time_since_peak_update = now - (self.max_pressure_peak_update_time or now)
+            if time_since_peak_update >= MAX_PRESSURE_STABILISE_WINDOW:
+                self.max_pressure_verify_stage = 'stabilising'
+                return True
+            # Not yet stable; if we were 'stabilising' but peak grew again,
+            # drop back to 'building'.
+            if self.max_pressure_verify_stage == 'stabilising':
+                self.max_pressure_verify_stage = 'building'
+
+        return False
+
+    def check_max_pressure_verified(self):
+        """Verify pressure has built up and stabilised (3-stage logic)."""
+        return self._update_max_pressure_verify_state()
+
+    def get_max_pressure_verify_status(self):
+        """Return the current verify stage plus numeric diagnostics for the UI.
+
+        Includes raw PSI readings, growth vs threshold, and time spent plateaued
+        so the operator can see *why* the test is still in a given stage.
+        Warning is raised when we've been in 'checking' for longer than
+        MAX_PRESSURE_BUILD_WARNING_TIME seconds (pump may not be bled).
+        """
+        now = time.time()
+        elapsed = 0.0
+        warning = False
+        if self.max_pressure_verify_start_time is not None:
+            elapsed = now - self.max_pressure_verify_start_time
+            if self.max_pressure_verify_stage == 'checking' and elapsed >= MAX_PRESSURE_BUILD_WARNING_TIME:
+                warning = True
+
+        stage_number = {'checking': 1, 'building': 2, 'stabilising': 3}.get(
+            self.max_pressure_verify_stage, 1
+        )
+
+        baseline = self.max_pressure_verify_baseline
+        current = self.current_pressure
+        peak = self.max_pressure_peak
+        growth = (current - baseline) if (current is not None and baseline is not None) else None
+        growth_target = (
+            self.target_max_pressure * MAX_PRESSURE_BUILD_THRESHOLD_PCT
+            if self.target_max_pressure is not None else None
+        )
+        time_stable = (
+            now - self.max_pressure_peak_update_time
+            if self.max_pressure_peak_update_time is not None else None
+        )
+
+        return {
+            'stage': self.max_pressure_verify_stage,
+            'stage_number': stage_number,
+            'elapsed': elapsed,
+            'warning': warning,
+            'baseline': baseline,
+            'current': current,
+            'peak': peak,
+            'growth': growth,
+            'growth_target': growth_target,
+            'time_stable': time_stable,
+            'stabilise_window': MAX_PRESSURE_STABILISE_WINDOW,
+        }
 
     def check_max_pressure_stabilised(self):
         # Check if stabilisation duration has elapsed since entering max_pressure_stabilise
@@ -469,6 +611,11 @@ class SiaTestBenchApplication(Application):
         # Reset timers when clearing test mode
         self.max_pressure_stabilise_start_time = None
         self.max_pressure_run_start_time = None
+        self.max_pressure_verify_start_time = None
+        self.max_pressure_verify_baseline = None
+        self.max_pressure_peak = None
+        self.max_pressure_peak_update_time = None
+        self.max_pressure_verify_stage = 'checking'
         self.max_flow_stabilise_start_time = None
         self.max_flow_run_start_time = None
         self.flow_accuracy_stabilise_start_time = None
@@ -527,6 +674,14 @@ class SiaTestBenchApplication(Application):
     async def send_test_progress_updates(self, state: str):
         """Send progress updates for currently running tests."""
         
+        if state == "max_pressure_verify":
+            status = self.get_max_pressure_verify_status()
+            await self.server.push_test_progress({
+                'type': 'test_progress',
+                'test': 'max_pressure_verify',
+                **status,
+            })
+
         if state == "max_pressure_stabilise" and self.max_pressure_stabilise_start_time is not None:
             elapsed = time.time() - self.max_pressure_stabilise_start_time
             progress = min(100.0, (elapsed / MAX_PRESSURE_STABILISE_DURATION) * 100.0)

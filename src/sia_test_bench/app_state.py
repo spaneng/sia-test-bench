@@ -12,7 +12,7 @@ class SiaTestBenchState:
         {"name": "auto_start"},
         {"name": "auto_stop"},
         {"name": "max_pressure_start", "on_enter": "stop_pump"},
-        {"name": "max_pressure_verify", "timeout": 30, "on_timeout": "on_timeout_max_pressure_verify", "on_enter": "start_pump"},
+        {"name": "max_pressure_verify", "on_enter": "on_enter_max_pressure_verify"},
         {"name": "max_pressure_stabilise", "on_enter": "on_enter_max_pressure_stabilise"},
         {"name": "max_pressure_run", "on_enter": "on_enter_max_pressure_run", "on_exit": "stop_pump"},
         {"name": "max_pressure_end"},
@@ -291,10 +291,11 @@ class SiaTestBenchState:
         await self.stop_pump()
         self.app.clear_shared_testmode()
 
-    async def on_timeout_max_pressure_verify(self):
-        """Handle timeout for max_pressure_verify - go back to start."""
-        log.info("Max pressure verify timed out - returning to max_pressure_start")
-        await self.init_max_pressure()
+    async def on_enter_max_pressure_verify(self):
+        """Reset verify tracking, capture baseline pressure, start the pump."""
+        self.app.reset_max_pressure_verify_tracking()
+        await self.app.start_pump()
+        log.info("Max pressure verify started — tracking 10%% build-up from baseline")
 
     async def on_timeout_max_flow_verify(self):
         """Handle timeout for max_flow_verify - go back to start."""

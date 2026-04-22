@@ -12,6 +12,7 @@ export function ControlPlane() {
     currentTestView,
     stateMachineState,
     targetFlow,
+    maxPressureVerifyStatus,
     maxPressureStabiliseProgress,
     maxPressureProgress,
     maxFlowStabiliseProgress,
@@ -1219,7 +1220,51 @@ export function ControlPlane() {
                       ) : maxPressureVerifying ? (
                         <div className="test-verification-section">
                           <div className="loading-spinner"></div>
-                          <p className="verification-message">Verifying pressure...</p>
+                          <p className="verification-message">
+                            <strong>Stage {maxPressureVerifyStatus.stageNumber} of 3 — </strong>
+                            {maxPressureVerifyStatus.stage === 'checking' && 'Checking pressure is building'}
+                            {maxPressureVerifyStatus.stage === 'building' && 'Pressure is building'}
+                            {maxPressureVerifyStatus.stage === 'stabilising' && 'Pressure is stabilising'}
+                          </p>
+                          <p className="verification-detail">
+                            {maxPressureVerifyStatus.stage === 'checking' && (
+                              <>
+                                Waiting for pressure to rise{' '}
+                                <strong>
+                                  {(maxPressureVerifyStatus.growth ?? 0).toFixed(1)} /{' '}
+                                  {(maxPressureVerifyStatus.growthTarget ?? 0).toFixed(1)} PSI
+                                </strong>
+                                {maxPressureVerifyStatus.current !== null && (
+                                  <> (current {maxPressureVerifyStatus.current.toFixed(1)} PSI)</>
+                                )}
+                              </>
+                            )}
+                            {maxPressureVerifyStatus.stage === 'building' && (
+                              <>
+                                Pressure climbing — now{' '}
+                                <strong>{(maxPressureVerifyStatus.current ?? 0).toFixed(1)} PSI</strong>
+                                {maxPressureVerifyStatus.peak !== null && (
+                                  <> (peak {maxPressureVerifyStatus.peak.toFixed(1)} PSI)</>
+                                )}
+                              </>
+                            )}
+                            {maxPressureVerifyStatus.stage === 'stabilising' && (
+                              <>
+                                Holding at{' '}
+                                <strong>{(maxPressureVerifyStatus.peak ?? 0).toFixed(1)} PSI</strong>
+                                {' '}— stable for{' '}
+                                <strong>
+                                  {(maxPressureVerifyStatus.timeStable ?? 0).toFixed(1)}s /{' '}
+                                  {maxPressureVerifyStatus.stabiliseWindow.toFixed(1)}s
+                                </strong>
+                              </>
+                            )}
+                          </p>
+                          {maxPressureVerifyStatus.warning && (
+                            <p className="verification-warning">
+                              Pump is not building pressure — are you sure the pump is bled correctly?
+                            </p>
+                          )}
                         </div>
                       ) : maxPressureVerified ? (
                         <div className="test-verification-section">
@@ -1237,7 +1282,7 @@ export function ControlPlane() {
                         </div>
                       ) : stateMachineState === 'max_pressure_run' ? (
                         <div className="test-run-section">
-                          <p className="test-run-message">Running test...</p>
+                          <p className="test-run-message">Capturing data...</p>
                         </div>
                       ) : (
                         <div className="test-run-section">
@@ -1501,7 +1546,51 @@ export function ControlPlane() {
                   ) : maxPressureVerifying ? (
                     <div className="test-verification-section">
                       <div className="loading-spinner"></div>
-                      <p className="verification-message">Verifying pressure...</p>
+                      <p className="verification-message">
+                        <strong>Stage {maxPressureVerifyStatus.stageNumber} of 3 — </strong>
+                        {maxPressureVerifyStatus.stage === 'checking' && 'Checking pressure is building'}
+                        {maxPressureVerifyStatus.stage === 'building' && 'Pressure is building'}
+                        {maxPressureVerifyStatus.stage === 'stabilising' && 'Pressure is stabilising'}
+                      </p>
+                      <p className="verification-detail">
+                        {maxPressureVerifyStatus.stage === 'checking' && (
+                          <>
+                            Waiting for pressure to rise{' '}
+                            <strong>
+                              {(maxPressureVerifyStatus.growth ?? 0).toFixed(1)} /{' '}
+                              {(maxPressureVerifyStatus.growthTarget ?? 0).toFixed(1)} PSI
+                            </strong>
+                            {maxPressureVerifyStatus.current !== null && (
+                              <> (current {maxPressureVerifyStatus.current.toFixed(1)} PSI)</>
+                            )}
+                          </>
+                        )}
+                        {maxPressureVerifyStatus.stage === 'building' && (
+                          <>
+                            Pressure climbing — now{' '}
+                            <strong>{(maxPressureVerifyStatus.current ?? 0).toFixed(1)} PSI</strong>
+                            {maxPressureVerifyStatus.peak !== null && (
+                              <> (peak {maxPressureVerifyStatus.peak.toFixed(1)} PSI)</>
+                            )}
+                          </>
+                        )}
+                        {maxPressureVerifyStatus.stage === 'stabilising' && (
+                          <>
+                            Holding at{' '}
+                            <strong>{(maxPressureVerifyStatus.peak ?? 0).toFixed(1)} PSI</strong>
+                            {' '}— stable for{' '}
+                            <strong>
+                              {(maxPressureVerifyStatus.timeStable ?? 0).toFixed(1)}s /{' '}
+                              {maxPressureVerifyStatus.stabiliseWindow.toFixed(1)}s
+                            </strong>
+                          </>
+                        )}
+                      </p>
+                      {maxPressureVerifyStatus.warning && (
+                        <p className="verification-warning">
+                          Pump is not building pressure — are you sure the pump is bled correctly?
+                        </p>
+                      )}
                     </div>
                   ) : maxPressureVerified ? (
                     <div className="test-verification-section">
@@ -1519,7 +1608,7 @@ export function ControlPlane() {
                     </div>
                   ) : stateMachineState === 'max_pressure_run' ? (
                     <div className="test-run-section">
-                      <p className="test-run-message">Running test...</p>
+                      <p className="test-run-message">Capturing data...</p>
                     </div>
                   ) : (
                     <div className="test-run-section">

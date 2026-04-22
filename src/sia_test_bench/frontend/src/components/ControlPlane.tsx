@@ -39,6 +39,7 @@ export function ControlPlane() {
     clearReportState,
     setTestStartTimestamp,
     setTestEndTimestamp,
+    testStartTimestamp,
     dataHistory,
     inputFlash,
     latestData,
@@ -60,7 +61,6 @@ export function ControlPlane() {
   const [maxPressureVerifying, setMaxPressureVerifying] = useState(false);
   const [maxFlowVerifying, setMaxFlowVerifying] = useState(false);
   const [flowAccuracyVerifying, setFlowAccuracyVerifying] = useState(false);
-  const [maxPressureVerified, setMaxPressureVerified] = useState(false);
   const [maxFlowVerified, setMaxFlowVerified] = useState(false);
   const [flowAccuracyVerified, setFlowAccuracyVerified] = useState(false);
   const [showPumpInfoPopover, setShowPumpInfoPopover] = useState(false);
@@ -227,63 +227,73 @@ export function ControlPlane() {
     return () => clearTimeout(timer);
   }, [inputFlash]);
 
-  // Automatically download report when it becomes available
+  // Auto-download only in auto-test chaining (where there's no Back button).
+  // In standalone test views the user clicks the Download button explicitly.
   useEffect(() => {
-    // Reset ref when reportUrl is cleared (new report generation started)
     if (!reportUrl) {
       downloadedReportUrl.current = null;
       return;
     }
-    
-    // Download if we haven't downloaded this URL yet
+
+    if (currentTestView !== 'auto') {
+      return;
+    }
+
     if (reportUrl !== downloadedReportUrl.current) {
       downloadedReportUrl.current = reportUrl;
-      
-      // Create a temporary anchor element and trigger download
+
       const link = document.createElement('a');
       link.href = reportUrl;
-      link.download = ''; // Let browser determine filename from Content-Disposition header
+      link.download = '';
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     }
-  }, [reportUrl]);
+  }, [reportUrl, currentTestView]);
 
   // Track test start/end timestamps based on state machine state
   useEffect(() => {
-    // Test start states - when we enter stabilise phase (actual test data collection begins)
-    const isStabiliseState = stateMachineState === 'max_pressure_stabilise' || 
-                             stateMachineState === 'max_flow_stabilise' || 
-                             stateMachineState === 'flow_accuracy_stabilise';
-    
-    if (isStabiliseState) {
-      // Use the latest data point's timestamp when entering stabilise phase
-      // This marks when the test actually starts collecting data
+    // Max-pressure capture begins at completion of Stage 1/3 of verify
+    // (pressure has crossed the 10% build threshold → stageNumber ≥ 2).
+    // Guarded by testStartTimestamp === null so it only fires once per cycle.
+    const isMaxPressureStage1Complete =
+      stateMachineState === 'max_pressure_verify' &&
+      maxPressureVerifyStatus.stageNumber >= 2 &&
+      testStartTimestamp === null;
+
+    // Flow tests don't have a 3-stage verify — start at stabilise entry as before.
+    const isFlowStabiliseState = stateMachineState === 'max_flow_stabilise' ||
+                                 stateMachineState === 'flow_accuracy_stabilise';
+
+    // Fallback for max pressure: if we somehow missed the stage-1 trigger,
+    // still start capture on stabilise entry rather than losing the window.
+    const isMaxPressureStabiliseFallback =
+      stateMachineState === 'max_pressure_stabilise' && testStartTimestamp === null;
+
+    if (isMaxPressureStage1Complete || isFlowStabiliseState || isMaxPressureStabiliseFallback) {
       if (dataHistory.length > 0 && dataHistory[dataHistory.length - 1]?.timestamp) {
         const latestTimestamp = dataHistory[dataHistory.length - 1].timestamp;
         setTestStartTimestamp(latestTimestamp);
       } else {
-        // If no data yet, use current time
         setTestStartTimestamp(Date.now());
       }
     }
-    
+
     // Test end states
-    const isEndState = stateMachineState === 'max_pressure_end' || 
-                       stateMachineState === 'max_flow_end' || 
+    const isEndState = stateMachineState === 'max_pressure_end' ||
+                       stateMachineState === 'max_flow_end' ||
                        stateMachineState === 'flow_accuracy_end';
-    
+
     if (isEndState && dataHistory.length > 0 && dataHistory[dataHistory.length - 1]?.timestamp) {
-      // Use the latest data point's timestamp when entering end phase
       const lastTimestamp = dataHistory[dataHistory.length - 1].timestamp;
       setTestEndTimestamp(lastTimestamp);
     }
-    
+
     // Reset timestamps when leaving test states or starting a new test
-    if (stateMachineState === 'off' || 
-        stateMachineState === 'auto_start' || 
+    if (stateMachineState === 'off' ||
+        stateMachineState === 'auto_start' ||
         stateMachineState === 'auto_stop' ||
         stateMachineState === 'max_pressure_start' ||
         stateMachineState === 'max_flow_start' ||
@@ -291,7 +301,7 @@ export function ControlPlane() {
       setTestStartTimestamp(null);
       setTestEndTimestamp(null);
     }
-  }, [stateMachineState, dataHistory, setTestStartTimestamp, setTestEndTimestamp]);
+  }, [stateMachineState, maxPressureVerifyStatus.stageNumber, testStartTimestamp, dataHistory, setTestStartTimestamp, setTestEndTimestamp]);
 
   // Watch state machine for max pressure verification/stabilization outcomes
   useEffect(() => {
@@ -300,22 +310,17 @@ export function ControlPlane() {
       setPressureStabilising(true);
     }
     
-    // Check if we just entered max_pressure_stabilise from max_pressure_verify (successful verification)
+    // On entry to max_pressure_stabilise, we've passed verify — go straight
+    // into Stage 3/3 messaging. No "Pressure verified" green tick.
     if (stateMachineState === 'max_pressure_stabilise' && maxPressureVerifying && pressureStabilising) {
       setMaxPressureVerifying(false);
-      setMaxPressureVerified(true);
       setPressureStabilising(false);
-      // After showing green tick for 2 seconds, clear it
-      setTimeout(() => {
-        setMaxPressureVerified(false);
-      }, 2000);
     }
     
     // Check if we went back to max_pressure_start from max_pressure_verify (timeout/failed verification)
     if (stateMachineState === 'max_pressure_start' && pressureStabilising) {
       // Show failure message
       setMaxPressureVerifying(false);
-      setMaxPressureVerified(false);
       setPressureFailed(true);
       setPressureStabilising(false);
       setIsTestRunning(false);
@@ -396,24 +401,33 @@ export function ControlPlane() {
   }, [stateMachineState, flowAccuracyVerifying, flowAccuracyStabilising]);
 
   // Handle test completion - stay in end state until report generation is successful
+  // Auto-trigger report generation the moment the pump-stop / test-complete fires,
+  // so the user sees "Generating report..." without needing to click a button.
+  useEffect(() => {
+    if (
+      maxPressureComplete &&
+      currentTestView === 'max_pressure' &&
+      !isLoadingReport &&
+      !reportUrl &&
+      !reportError
+    ) {
+      handleGenerateReport('max_pressure');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxPressureComplete, currentTestView, isLoadingReport, reportUrl, reportError]);
+
   useEffect(() => {
     if (maxPressureComplete && reportUrl) {
-      // Only reset to 'none' after report has been successfully generated
-      // Notify backend that frontend has finished showing completion message
+      // Acknowledge backend once the report is ready so it can move on in auto flows.
       sendMessage({ type: 'test', command: 'acknowledge_pressure_complete' });
-      
-      if (currentTestView === 'max_pressure') {
-        setCurrentTestView('none');
+
+      // Auto-mode chains into the next test — navigate back automatically.
+      // Standalone max_pressure waits for the user's Back button.
+      if (currentTestView === 'auto') {
         resetTestProgress();
-        setIsTestRunning(false);
       }
-      
-      // Reset test-specific flags
-      setMaxPressureConfirmed(false);
-      setMaxPressureVerifying(false);
-      setMaxPressureVerified(false);
     }
-  }, [maxPressureComplete, reportUrl, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
+  }, [maxPressureComplete, reportUrl, currentTestView, resetTestProgress, sendMessage]);
 
   // Handle max flow test completion - stay in end state until report generation is successful
   useEffect(() => {
@@ -606,7 +620,6 @@ export function ControlPlane() {
     setMaxPressureVerifying(false);
     setMaxFlowVerifying(false);
     setFlowAccuracyVerifying(false);
-    setMaxPressureVerified(false);
     setMaxFlowVerified(false);
     setFlowAccuracyVerified(false);
     setPressureFailed(false);
@@ -632,7 +645,6 @@ export function ControlPlane() {
     setMaxPressureVerifying(false);
     setMaxFlowVerifying(false);
     setFlowAccuracyVerifying(false);
-    setMaxPressureVerified(false);
     setMaxFlowVerified(false);
     setFlowAccuracyVerified(false);
     setPressureFailed(false);
@@ -768,6 +780,28 @@ export function ControlPlane() {
     await finalizeTestAndGenerateReport(testId);
   };
 
+  // Return to the test-selection menu after the user has finished with a report.
+  const handleBackToTestMenu = () => {
+    setCurrentTestView('none');
+    setIsTestRunning(false);
+    setMaxPressureConfirmed(false);
+    setMaxFlowConfirmed(false);
+    setFlowAccuracyConfirmed(false);
+    setMaxPressureVerifying(false);
+    setMaxFlowVerifying(false);
+    setFlowAccuracyVerifying(false);
+    setMaxFlowVerified(false);
+    setFlowAccuracyVerified(false);
+    setPressureFailed(false);
+    setFlowFailed(false);
+    setFlowAccuracyFailed(false);
+    setPressureStabilising(false);
+    setFlowStabilising(false);
+    setFlowAccuracyStabilising(false);
+    resetTestProgress();
+    clearReportState();
+  };
+
   // Render report generation UI
   const renderReportGenerationUI = (testType: string) => {
     if (isLoadingReport) {
@@ -800,17 +834,24 @@ export function ControlPlane() {
     if (reportUrl) {
       return (
         <div className="report-generation-section">
-          <div className="success-checkmark">✓</div>
           <p className="report-message">Report generated successfully</p>
-          <a
-            href={reportUrl}
-            download
-            className="btn btn-primary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Download Report
-          </a>
+          <div className="report-actions">
+            <a
+              href={reportUrl}
+              download
+              className="btn btn-primary"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Download Report
+            </a>
+            <button
+              className="btn btn-secondary"
+              onClick={handleBackToTestMenu}
+            >
+              Back
+            </button>
+          </div>
         </div>
       );
     }
@@ -1266,23 +1307,17 @@ export function ControlPlane() {
                             </p>
                           )}
                         </div>
-                      ) : maxPressureVerified ? (
-                        <div className="test-verification-section">
-                          <div className="success-checkmark">✓</div>
-                          <p className="verification-message">Pressure verified</p>
-                        </div>
                       ) : pressureFailed ? (
                         <div className="test-verification-section">
                           <div className="error-cross">✗</div>
                           <p className="verification-message error">Pressure not reached</p>
                         </div>
-                      ) : stateMachineState === 'max_pressure_stabilise' ? (
-                        <div className="test-run-section">
-                          <p className="test-run-message">Pressure stabilising...</p>
-                        </div>
-                      ) : stateMachineState === 'max_pressure_run' ? (
-                        <div className="test-run-section">
-                          <p className="test-run-message">Capturing data...</p>
+                      ) : (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') ? (
+                        <div className="test-verification-section">
+                          <div className="loading-spinner"></div>
+                          <p className="verification-message">
+                            <strong>Stage 3 of 3 — </strong>Pressure is stabilising
+                          </p>
                         </div>
                       ) : (
                         <div className="test-run-section">
@@ -1290,30 +1325,24 @@ export function ControlPlane() {
                         </div>
                       )}
                     </div>
-                    {/* Progress bar for stabilise phase */}
-                    {isTestRunning && stateMachineState === 'max_pressure_stabilise' && (
-                      <div className="test-progress-container">
-                        <div className="test-progress-bar">
-                          <div 
-                            className="test-progress-fill" 
-                            style={{ width: `${maxPressureStabiliseProgress}%` }}
-                          ></div>
-                        </div>
-                        <p className="test-progress-text">{maxPressureStabiliseProgress.toFixed(1)}%</p>
-                      </div>
-                    )}
-                    {/* Progress bar for run phase */}
-                    {isTestRunning && stateMachineState === 'max_pressure_run' && (
-                      <div className="test-progress-container">
-                        <div className="test-progress-bar">
-                          <div 
-                            className="test-progress-fill" 
-                            style={{ width: `${maxPressureProgress}%` }}
-                          ></div>
-                        </div>
-                        <p className="test-progress-text">{maxPressureProgress.toFixed(1)}%</p>
-                      </div>
-                    )}
+                    {/* Unified Stage 3 progress: stabilise + run are 10s each. */}
+                    {isTestRunning &&
+                      (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') && (() => {
+                        const unified = stateMachineState === 'max_pressure_stabilise'
+                          ? maxPressureStabiliseProgress * 0.5
+                          : 50 + maxPressureProgress * 0.5;
+                        return (
+                          <div className="test-progress-container">
+                            <div className="test-progress-bar">
+                              <div
+                                className="test-progress-fill"
+                                style={{ width: `${unified}%` }}
+                              ></div>
+                            </div>
+                            <p className="test-progress-text">{unified.toFixed(1)}%</p>
+                          </div>
+                        );
+                      })()}
                   </>
                 )}
                 
@@ -1592,23 +1621,17 @@ export function ControlPlane() {
                         </p>
                       )}
                     </div>
-                  ) : maxPressureVerified ? (
-                    <div className="test-verification-section">
-                      <div className="success-checkmark">✓</div>
-                      <p className="verification-message">Pressure verified</p>
-                    </div>
                   ) : pressureFailed ? (
                     <div className="test-verification-section">
                       <div className="error-cross">✗</div>
                       <p className="verification-message error">Pressure not reached</p>
                     </div>
-                  ) : stateMachineState === 'max_pressure_stabilise' ? (
-                    <div className="test-run-section">
-                      <p className="test-run-message">Pressure stabilising...</p>
-                    </div>
-                  ) : stateMachineState === 'max_pressure_run' ? (
-                    <div className="test-run-section">
-                      <p className="test-run-message">Capturing data...</p>
+                  ) : (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') ? (
+                    <div className="test-verification-section">
+                      <div className="loading-spinner"></div>
+                      <p className="verification-message">
+                        <strong>Stage 3 of 3 — </strong>Pressure is stabilising
+                      </p>
                     </div>
                   ) : (
                     <div className="test-run-section">
@@ -1616,30 +1639,25 @@ export function ControlPlane() {
                     </div>
                   )}
                 </div>
-                {/* Progress bar for stabilise phase */}
-                {isTestRunning && currentTestView === 'max_pressure' && stateMachineState === 'max_pressure_stabilise' && (
-                  <div className="test-progress-container">
-                    <div className="test-progress-bar">
-                      <div 
-                        className="test-progress-fill" 
-                        style={{ width: `${maxPressureStabiliseProgress}%` }}
-                      ></div>
-                    </div>
-                    <p className="test-progress-text">{maxPressureStabiliseProgress.toFixed(1)}%</p>
-                  </div>
-                )}
-                {/* Progress bar for run phase */}
-                {isTestRunning && currentTestView === 'max_pressure' && stateMachineState === 'max_pressure_run' && (
-                  <div className="test-progress-container">
-                    <div className="test-progress-bar">
-                      <div 
-                        className="test-progress-fill" 
-                        style={{ width: `${maxPressureProgress}%` }}
-                      ></div>
-                    </div>
-                    <p className="test-progress-text">{maxPressureProgress.toFixed(1)}%</p>
-                  </div>
-                )}
+                {/* Unified Stage 3 progress: stabilise + run are 10s each, so each
+                    phase is half of the combined bar. */}
+                {isTestRunning && currentTestView === 'max_pressure' &&
+                  (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') && (() => {
+                    const unified = stateMachineState === 'max_pressure_stabilise'
+                      ? maxPressureStabiliseProgress * 0.5
+                      : 50 + maxPressureProgress * 0.5;
+                    return (
+                      <div className="test-progress-container">
+                        <div className="test-progress-bar">
+                          <div
+                            className="test-progress-fill"
+                            style={{ width: `${unified}%` }}
+                          ></div>
+                        </div>
+                        <p className="test-progress-text">{unified.toFixed(1)}%</p>
+                      </div>
+                    );
+                  })()}
               </>
             )}
             {currentTestView === 'max_flow' && (

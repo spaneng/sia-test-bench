@@ -419,15 +419,23 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
         current: data.current,
       }));
       
-      // Prepare metadata
+      // Prepare metadata — include full pump spec so the report's Pump Details
+      // section has the supply voltage, max RPM, max flow, max pressure,
+      // current draw and stroke length to display.
       const metadata = {
-        pump_serial: selectedPump.serialNumber || selectedPump.id, // Use serialNumber if available, otherwise ID as fallback
+        pump_serial: selectedPump.serialNumber || selectedPump.id,
         pump_model: selectedPump.model || selectedPump.name,
-        operator: '', // Placeholder - can be enhanced later
-        site: '', // Placeholder - can be enhanced later
+        pump_name: selectedPump.name,
+        operator: '',
+        site: '',
         start_timestamp: isMilliseconds ? startTimestamp / 1000 : startTimestamp,
         end_timestamp: isMilliseconds ? endTimestamp / 1000 : endTimestamp,
-        pump_name: selectedPump.name,
+        supply_voltage: selectedPump.supplyVoltage,
+        max_rpm: selectedPump.maxRPM,
+        max_flow_rate: selectedPump.maxFlowRate,
+        max_pressure: selectedPump.maxPressure,
+        current_draw: selectedPump.currentDraw,
+        stroke_length: selectedPump.strokeLength,
       };
       
       // POST to finalize endpoint

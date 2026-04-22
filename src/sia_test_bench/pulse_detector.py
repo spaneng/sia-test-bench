@@ -31,6 +31,7 @@ class PulseRateDetector:
         self._confidence = 0.0        # 0.0 - 1.0
         self._analysis_task = None
         self._running = False
+        self._paused = False
 
     @property
     def pulse_rate(self):
@@ -76,9 +77,26 @@ class PulseRateDetector:
             except asyncio.CancelledError:
                 pass
 
+    def pause(self):
+        """Stop accepting samples and clear any state.
+
+        Use during pump off-phases so flat-line data doesn't contaminate the
+        analysis window when the pump resumes. Idempotent.
+        """
+        if self._paused:
+            return
+        self._paused = True
+        self._buffer.clear()
+        self._pulse_rate = None
+        self._confidence = 0.0
+
+    def resume(self):
+        """Resume accepting samples. Idempotent."""
+        self._paused = False
+
     def _on_tag_update(self, key, value):
         """Callback invoked by pydoover on every tag value change."""
-        if value is None:
+        if self._paused or value is None:
             return
         try:
             self._buffer.append((time.monotonic(), float(value)))
@@ -89,8 +107,12 @@ class PulseRateDetector:
         """Periodically analyse the buffer to compute pulse rate."""
         while self._running:
             await asyncio.sleep(ANALYSIS_INTERVAL)
-            if len(self._buffer) >= 10:
+            if self._paused or len(self._buffer) < 10:
+                continue
+            try:
                 self._analyse()
+            except Exception as e:
+                log.exception(f"Pulse analysis failed: {e}")
 
     def _analyse(self):
         """Run autocorrelation and FFT on the buffer to estimate pulse rate."""
@@ -139,7 +161,19 @@ class PulseRateDetector:
         if not peaks:
             return None, 0.0
 
-        best_lag, best_val = max(peaks, key=lambda p: p[1])
+        # Avoid octave/subharmonic errors: pick the SHORTEST-lag peak that's
+        # within 30% of the strongest peak, not the strongest peak itself.
+        # For a periodic signal the autocorrelation has peaks at T, 2T, 3T...
+        # with roughly equal amplitude; pulse-shape asymmetry can nudge 2T or
+        # 3T above T, which causes argmax to report a subharmonic. The true
+        # period is always at the first strong peak.
+        max_val = max(p[1] for p in peaks)
+        # No positive correlation anywhere → nothing periodic in the window.
+        if max_val <= 0:
+            return None, 0.0
+        threshold = 0.7 * max_val
+        strong_peaks = [p for p in peaks if p[1] >= threshold]
+        best_lag, best_val = min(strong_peaks, key=lambda p: p[0])
 
         # Parabolic interpolation for sub-sample accuracy
         if 1 <= best_lag < n - 1:
@@ -216,3 +250,30 @@ class PulseRateDetector:
         self._pulse_rate = round(best_rate, 3)
         self._confidence = round(best_conf, 3)
         log.debug(f"Pulse rate: {self._pulse_rate} Hz (conf={self._confidence})")
+
+
+def fuse_pulse_rates(detectors):
+    """Confidence-weighted mean of pulse rates across multiple detectors.
+
+    Each active detector (one with a non-None pulse_rate and non-zero
+    confidence) contributes `rate * confidence`; the result is normalised
+    by the summed confidence. The returned confidence is the mean of
+    per-detector confidences over ALL supplied detectors (including inactive
+    ones), so the fused confidence drops when not all sensors are reporting.
+
+    Returns:
+        (rate, confidence) — (None, 0.0) when no detector has a rate.
+    """
+    weighted_sum = 0.0
+    weight_total = 0.0
+    total = 0
+    for d in detectors:
+        total += 1
+        r = d.pulse_rate
+        c = d.confidence
+        if r is not None and c > 0:
+            weighted_sum += r * c
+            weight_total += c
+    if total == 0 or weight_total <= 0:
+        return None, 0.0
+    return round(weighted_sum / weight_total, 3), round(weight_total / total, 3)

@@ -602,12 +602,12 @@ class TestBenchServer:
                     status=500
                 )
             
-            # Extract test name from test_id (format: "test-type-timestamp")
+            # Extract test name and type from test_id (format: "test-type-timestamp")
             test_name = None
+            test_type = None
             if test_id and '-' in test_id:
-                # Get all parts except last (timestamp) using rsplit
                 if test_type_str := test_id.rsplit('-', 1)[0]:
-                    # Convert test type to readable name
+                    test_type = test_type_str.replace('-', '_')
                     test_name_map = {
                         'max-pressure': 'Max Pressure Test',
                         'max-flow': 'Max Flow Test',
@@ -637,6 +637,8 @@ class TestBenchServer:
             # Create test record
             test_record = {
                 'test_id': test_id,
+                'test_type': test_type,
+                'test_name': test_name,
                 'metadata': metadata,
                 'series': series,
                 'metrics': metrics,

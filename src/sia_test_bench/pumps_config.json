@@ -19,7 +19,7 @@
     "maxPressure": 750,
     "currentDraw": 2.5,
     "strokeLength": 1.5,
-    "supplyVoltage": "24VDC"
+    "supplyVoltage": "12VDC"
   },
   {
     "id": "3",

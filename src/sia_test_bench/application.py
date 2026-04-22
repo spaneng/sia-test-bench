@@ -10,7 +10,7 @@ from pydoover.tags.manager import KeyPath, TagsManagerDocker
 
 from .app_config import SiaTestBenchConfig
 from .app_state import SiaTestBenchState
-from .pulse_detector import PulseRateDetector
+from .pulse_detector import PulseRateDetector, fuse_pulse_rates
 from .server import TestBenchServer
 from .utils import PumpType
 
@@ -171,9 +171,51 @@ class SiaTestBenchApplication(Application):
                     )
                     self.current_draw_pulse_detectors[voltage] = detector
 
+        # Gate all pulse detectors on the pump's DutyCycleOutputState so they
+        # don't try to find a frequency during the off-phase of a duty cycle.
+        pump_app_key = self._safe_config(self.config.pump_controller_app)
+        if pump_app_key:
+            if self.remote_tag_manager is not None:
+                self.remote_tag_manager.subscribe_to_tag(
+                    "DutyCycleOutputState",
+                    self._on_duty_cycle_state_change,
+                    app_key=pump_app_key,
+                )
+            else:
+                self.subscribe_to_tag(
+                    "DutyCycleOutputState",
+                    self._on_duty_cycle_state_change,
+                    app_key=pump_app_key,
+                )
+            # Apply current state immediately — tag subscriptions only fire on
+            # change, so without this we'd be in the default (running) state
+            # even if the pump is currently mid off-phase.
+            initial_state = self.get_data_tag("DutyCycleOutputState", pump_app_key)
+            if initial_state is not None:
+                self._on_duty_cycle_state_change("DutyCycleOutputState", initial_state)
+
         self.state = SiaTestBenchState(app=self)
         self.server = TestBenchServer(state=self.state, app=self)
         await self.server.setup()
+
+    def _iter_pulse_detectors(self):
+        if self.flow_pulse_detector is not None:
+            yield self.flow_pulse_detector
+        yield from self.current_draw_pulse_detectors.values()
+
+    def _on_duty_cycle_state_change(self, key, value):
+        """Pause/resume pulse detectors based on the pump's duty-cycle output."""
+        if value is None:
+            return
+        if isinstance(value, str):
+            on = value.strip().lower() in ("1", "true", "high", "on", "yes")
+        else:
+            on = bool(value)
+        for detector in self._iter_pulse_detectors():
+            if on:
+                detector.resume()
+            else:
+                detector.pause()
         
     def get_active_current_draw_app(self):
         """Return the current draw app key for the active supply voltage."""
@@ -198,21 +240,34 @@ class SiaTestBenchApplication(Application):
     async def get_ui_max_flow_rate(self):
         return self.ui_pump_params.get("max_flow_rate")
 
-    async def _update_current_sensor_polling(self):
-        """Drive each current sensor's `polling_frequency` tag based on session/voltage.
+    async def _update_pulse_sensor_polling(self):
+        """Drive sensor `polling_frequency` tags for pulse-rate detection.
 
-        Active sensor (matches active supply voltage, WS client connected) runs at
-        5 Hz so pulse detection has enough samples; others idle at 0.5 Hz.
+        Active sensors (flow meter whenever a session is open; current sensor
+        matching the active supply voltage) run at 7 Hz so the PulseRateDetector
+        has enough Nyquist headroom above the ~1.3 Hz pump pulse rate. Others
+        idle at 0.5 Hz.
         """
         session_active = bool(self.server and self.server.websockets)
+        active_freq = 7.0
+        idle_freq = 0.5
+
         for voltage, app_key in self.current_draw_apps.items():
             if not app_key:
                 continue
-            freq = 5.0 if (session_active and voltage == self.active_supply_voltage) else 0.5
+            freq = active_freq if (session_active and voltage == self.active_supply_voltage) else idle_freq
             try:
                 await self.set_data_tag("polling_frequency", freq, app_key)
             except Exception as e:
                 log.warning(f"Failed to set polling_frequency on {voltage} sensor ({app_key}): {e}")
+
+        flow_app_key = self._safe_config(self.config.flow_meter_sensor_app)
+        if flow_app_key:
+            freq = active_freq if session_active else idle_freq
+            try:
+                await self.set_data_tag("polling_frequency", freq, flow_app_key)
+            except Exception as e:
+                log.warning(f"Failed to set polling_frequency on flow sensor ({flow_app_key}): {e}")
 
     async def main_loop(self):
 
@@ -229,7 +284,7 @@ class SiaTestBenchApplication(Application):
         # Send test progress updates if in a test run state
         await self.send_test_progress_updates(state)
 
-        await self._update_current_sensor_polling()
+        await self._update_pulse_sensor_polling()
         
         # Get tag values for system data
         try:
@@ -266,8 +321,15 @@ class SiaTestBenchApplication(Application):
             if current_draw_pulse is not None:
                 await self.set_tag("current_draw_pulse", current_draw_pulse)
 
-            # Use flow pulse if available, otherwise current draw pulse
-            pulse_rate = flow_pulse if flow_pulse is not None else current_draw_pulse
+            # Confidence-weighted fusion across flow + active current-draw
+            # detectors. Falls back to whichever detector currently has a
+            # rate; returns None when neither does.
+            fusion_detectors = []
+            if self.flow_pulse_detector is not None:
+                fusion_detectors.append(self.flow_pulse_detector)
+            if active_cd_detector is not None:
+                fusion_detectors.append(active_cd_detector)
+            pulse_rate, _ = fuse_pulse_rates(fusion_detectors)
             valve_state = False #self.get_tag("valve_state")
             
             # Store current pressure and flow for verification checks

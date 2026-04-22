@@ -43,10 +43,20 @@ def _load_logo_base64(template_dir: Path) -> Optional[str]:
     return base64.b64encode(logo_path.read_bytes()).decode('utf-8')
 
 
+def _format_timestamp(value, fmt: str = '%Y-%m-%d %H:%M:%S') -> str:
+    """Jinja filter: render a Unix timestamp (seconds) as a human-readable string."""
+    if value is None or value == '':
+        return ''
+    try:
+        return datetime.fromtimestamp(float(value)).strftime(fmt)
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def render_test_chart_png(
     time_series: List[float],
-    flow_lpm: List[float],
-    pressure_kpa: List[float],
+    flow_lph: List[float],
+    pressure_psi: List[float],
     figure_size: tuple = (8.27, 5.85),  # A4 landscape aspect ratio
     test_name: Optional[str] = None
 ) -> bytes:
@@ -55,8 +65,8 @@ def render_test_chart_png(
 
     Args:
         time_series: Array of time values (seconds or timestamps)
-        flow_lpm: Flow rate series in L/min
-        pressure_kpa: Pressure series in kPa
+        flow_lph: Flow rate series in L/Hr
+        pressure_psi: Pressure series in PSI
         figure_size: Tuple of (width, height) in inches (default: A4 landscape)
         test_name: Optional test name to include in the title
 
@@ -69,8 +79,8 @@ def render_test_chart_png(
     # Plot flow on left Y-axis (Solar Injection brand orange)
     color_flow = '#FF8000'
     ax1.set_xlabel('Time (s)', fontweight='bold')
-    ax1.set_ylabel('Flow Rate (L/min)', color=color_flow, fontweight='bold')
-    line1 = ax1.plot(time_series, flow_lpm, color=color_flow, linewidth=1.8, label='Flow Rate')
+    ax1.set_ylabel('Flow Rate (L/Hr)', color=color_flow, fontweight='bold')
+    line1 = ax1.plot(time_series, flow_lph, color=color_flow, linewidth=1.8, label='Flow Rate')
     ax1.tick_params(axis='y', labelcolor=color_flow)
     ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
     ax1.set_facecolor('#F9F9F9')
@@ -78,24 +88,31 @@ def render_test_chart_png(
     # Create second Y-axis for pressure (brand black/charcoal)
     ax2 = ax1.twinx()
     color_pressure = '#1a1a1a'
-    ax2.set_ylabel('Pressure (kPa)', color=color_pressure, fontweight='bold')
-    line2 = ax2.plot(time_series, pressure_kpa, color=color_pressure, linewidth=1.8, label='Pressure')
+    ax2.set_ylabel('Pressure (PSI)', color=color_pressure, fontweight='bold')
+    line2 = ax2.plot(time_series, pressure_psi, color=color_pressure, linewidth=1.8, label='Pressure')
     ax2.tick_params(axis='y', labelcolor=color_pressure)
-    
-    # Add title with test name if provided
+
     if test_name:
         title = f'{test_name} Results'
     else:
         title = 'Pump Test Results'
     ax1.set_title(title, fontweight='bold', pad=15)
-    
-    # Add legend
+
+    # Legend sits below the plot, centred under the Time(s) axis label.
     lines = line1 + line2
     labels = [l.get_label() for l in lines]
-    ax1.legend(lines, labels, loc='upper left', framealpha=0.9, edgecolor='gray')
-    
-    # Tight layout to prevent clipping
-    plt.tight_layout()
+    ax1.legend(
+        lines, labels,
+        loc='upper center',
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=2,
+        frameon=True,
+        framealpha=0.9,
+        edgecolor='gray',
+    )
+
+    # Leave room beneath the x-axis for the legend.
+    plt.tight_layout(rect=(0, 0.08, 1, 1))
     
     # Save to bytes buffer
     buf = io.BytesIO()
@@ -145,7 +162,8 @@ def generate_report_pdf(
         loader=FileSystemLoader(str(template_dir)),
         autoescape=select_autoescape(['html', 'xml'])
     )
-    
+    env.filters['humantime'] = _format_timestamp
+
     # Load template
     template = env.get_template('report.html')
 
@@ -164,6 +182,8 @@ def generate_report_pdf(
         'pump_metadata': test_record.get('pump_metadata', {}),
         'metrics': test_record.get('metrics', {}),
         'notes': test_record.get('notes', ''),
+        'test_type': test_record.get('test_type'),
+        'test_name': test_record.get('test_name'),
     }
     
     # Render HTML
@@ -196,12 +216,12 @@ def generate_report_with_chart(test_record: Dict, template_dir: Optional[Path] =
             start_time = timestamps[0]
             time_series = [(ts - start_time) for ts in timestamps]
     
-    # Extract data series
-    flow_lpm = test_record.get('flow_lpm', [])
-    pressure_kpa = test_record.get('pressure_kpa', [])
-    
+    # Extract data series (flow in L/Hr, pressure in PSI)
+    flow_lph = test_record.get('flow_lph', [])
+    pressure_psi = test_record.get('pressure_psi', [])
+
     # Generate chart
-    chart_png = render_test_chart_png(time_series, flow_lpm, pressure_kpa)
+    chart_png = render_test_chart_png(time_series, flow_lph, pressure_psi)
     
     # Generate PDF
     pdf_bytes = generate_report_pdf(test_record, chart_png, template_dir)

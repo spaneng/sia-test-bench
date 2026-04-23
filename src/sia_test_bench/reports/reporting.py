@@ -62,6 +62,9 @@ def render_test_chart_png(
     left_label: str = 'Flow Rate',
     left_unit: str = 'L/Hr',
     left_color: str = '#FF8000',
+    right_label: str = 'Pressure',
+    right_unit: str = 'PSI',
+    right_color: str = '#1a1a1a',
 ) -> bytes:
     """
     Render a test chart as PNG bytes with dual Y-axes.
@@ -90,12 +93,11 @@ def render_test_chart_png(
     ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
     ax1.set_facecolor('#F9F9F9')
 
-    # Create second Y-axis for pressure (brand black/charcoal)
+    # Create second Y-axis (default: pressure in brand black; overridable).
     ax2 = ax1.twinx()
-    color_pressure = '#1a1a1a'
-    ax2.set_ylabel('Pressure (PSI)', color=color_pressure, fontweight='bold')
-    line2 = ax2.plot(time_series, pressure_psi, color=color_pressure, linewidth=1.8, label='Pressure')
-    ax2.tick_params(axis='y', labelcolor=color_pressure)
+    ax2.set_ylabel(f'{right_label} ({right_unit})', color=right_color, fontweight='bold')
+    line2 = ax2.plot(time_series, pressure_psi, color=right_color, linewidth=1.8, label=right_label)
+    ax2.tick_params(axis='y', labelcolor=right_color)
 
     if test_name:
         title = f'{test_name} Results'

@@ -87,19 +87,21 @@ def render_test_chart_png(series: List[Dict[str, Any]], test_name: str = None) -
             left_label='Current', left_unit='A', left_color='#E63946',
         )
 
-    # Max-flow test: plot the analogue sight-glass level (mm) vs time. Pressure
-    # on the secondary axis is still useful to confirm the operator held the
-    # regulator at ~30% during the 60s run.
+    # Max-flow test: coriolis flow rate on the primary axis and sight-glass
+    # level on the secondary. These are the two live measurements during the
+    # 60s run — pressure is held constant by the operator so it's less useful.
     is_max_flow = bool(
         test_name and "flow" in test_name.lower() and "accuracy" not in test_name.lower()
     )
     if is_max_flow:
+        flow_lph = [point.get("flowRate") or 0.0 for point in series]
         level_mm = [
             (point.get("levelReading") or 0.0) * 1000.0 for point in series
         ]
         return _render_chart(
-            time_series, level_mm, pressure_psi, test_name=test_name,
-            left_label='Sight Glass Level', left_unit='mm', left_color='#2563eb',
+            time_series, flow_lph, level_mm, test_name=test_name,
+            left_label='Flow Rate', left_unit='L/Hr', left_color='#FF8000',
+            right_label='Sight Glass Level', right_unit='mm', right_color='#2563eb',
         )
 
     flow_lph = [point.get("flowRate") or 0.0 for point in series]

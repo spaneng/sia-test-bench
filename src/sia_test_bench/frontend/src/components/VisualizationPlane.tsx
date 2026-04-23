@@ -42,15 +42,31 @@ export function VisualizationPlane() {
     [dataHistory]
   );
   
-  const flowRateData = useMemo(() =>
-    dataHistory.map(point => point.flowRate ?? 0),
-    [dataHistory]
-  );
-
   const flowRateUnfilteredData = useMemo(() =>
     dataHistory.map(point => point.flowRateUnfiltered ?? point.flowRate ?? 0),
     [dataHistory]
   );
+
+  // Trailing 50-sample moving average of the raw flow signal. We compute the
+  // filtered plot client-side here (rather than using the backend's filtered
+  // tag value) so the visible smoothing matches what the operator sees —
+  // with a rolling sum so this stays O(n) even as dataHistory grows.
+  const flowRateData = useMemo(() => {
+    const WINDOW = 50;
+    const result: number[] = new Array(flowRateUnfilteredData.length);
+    let sum = 0;
+    for (let i = 0; i < flowRateUnfilteredData.length; i++) {
+      sum += flowRateUnfilteredData[i];
+      if (i >= WINDOW) sum -= flowRateUnfilteredData[i - WINDOW];
+      const windowSize = Math.min(i + 1, WINDOW);
+      result[i] = sum / windowSize;
+    }
+    return result;
+  }, [flowRateUnfilteredData]);
+
+  const latestFilteredFlow = flowRateData.length > 0
+    ? flowRateData[flowRateData.length - 1]
+    : undefined;
   
   const currentData = useMemo(() =>
     dataHistory.map(point => point.currentDraw ?? 0),
@@ -85,7 +101,7 @@ export function VisualizationPlane() {
             flowData={flowRateData}
             flowDataUnfiltered={flowRateUnfilteredData}
             latestPressure={latestData?.pressure}
-            latestFlow={latestData?.flowRate}
+            latestFlow={latestFilteredFlow}
           />
         </div>
       </Collapse>
@@ -110,7 +126,7 @@ export function VisualizationPlane() {
                 secondaryColor="rgba(16, 185, 129, 0.35)"
                 unit="L/Hr"
                 color="#10b981"
-                latestValue={latestData?.flowRate}
+                latestValue={latestFilteredFlow}
               />
             </div>
           </Collapse>

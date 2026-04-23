@@ -1010,7 +1010,13 @@ export function ControlPlane() {
               <div className="test-progress-bar">
                 <div className="test-progress-fill" style={{ width: `${maxFlowProgress}%` }}></div>
               </div>
-              <p className="test-progress-text">{maxFlowProgress.toFixed(1)}%</p>
+              <p className="test-progress-text">
+                {Math.round(maxFlowRunStatus.elapsed)}s elapsed
+                {' · '}
+                {Math.max(0, Math.round(maxFlowRunStatus.duration - maxFlowRunStatus.elapsed))}s remaining
+                {' · '}
+                {maxFlowProgress.toFixed(0)}%
+              </p>
             </div>
           )}
         </>

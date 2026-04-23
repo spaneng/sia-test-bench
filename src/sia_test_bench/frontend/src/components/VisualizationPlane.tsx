@@ -78,6 +78,17 @@ export function VisualizationPlane() {
     [dataHistory]
   );
 
+  // Tank level rendered from the raw analogue `level_reading` (metres),
+  // converted to mm for display. tankLevel (`level_filled_percentage`) is
+  // derived and less useful than the raw reading here.
+  const tankLevelData = useMemo(() =>
+    dataHistory.map(point => (point.levelReading ?? 0) * 1000),
+    [dataHistory]
+  );
+  const latestLevelMm = latestData?.levelReading != null
+    ? latestData.levelReading * 1000
+    : undefined;
+
   return (
     <div className="visualization-plane">
       {/* <div className="viz-header">
@@ -146,6 +157,18 @@ export function VisualizationPlane() {
               unit="Hz"
               color="#06b6d4"
               latestValue={latestData?.pulseRate ?? 0}
+            />
+          </div>
+
+          {/* Tank level mini plot — always visible so the operator can watch
+              the sight-glass level regardless of which test is running. */}
+          <div className="static-charts-grid">
+            <MiniLiveChart
+              label="Tank Level"
+              data={tankLevelData}
+              unit="mm"
+              color="#8b5cf6"
+              latestValue={latestLevelMm}
             />
           </div>
       </div>

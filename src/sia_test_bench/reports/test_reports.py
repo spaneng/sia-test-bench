@@ -82,9 +82,14 @@ def render_test_chart_png(series: List[Dict[str, Any]], test_name: str = None) -
     is_max_pressure = bool(test_name and "pressure" in test_name.lower())
     if is_max_pressure:
         left_values = [point.get("currentDraw") or 0.0 for point in series]
+        # Smooth both series before rendering — the raw 5Hz current/pressure
+        # reads are visibly jagged over a 60s hold, so a small centred moving
+        # average gives a more readable plot without hiding real trends.
+        left_smoothed = _moving_average(left_values, window=9)
+        pressure_smoothed = _moving_average(pressure_psi, window=9)
         return _render_chart(
-            time_series, left_values, pressure_psi, test_name=test_name,
-            left_label='Current', left_unit='A', left_color='#E63946',
+            time_series, left_smoothed, pressure_smoothed, test_name=test_name,
+            left_label='Current', left_unit='A', left_color='#6b7280',
         )
 
     # Max-flow test: coriolis flow rate on the primary axis and sight-glass
@@ -160,17 +165,17 @@ def generate_report_pdf(test_record: Dict[str, Any], chart_png_bytes: bytes) -> 
 
     # Promote max-flow result fields from metadata into the metrics dict so the
     # report template can render them in the Summary Metrics section without
-    # having to know about this test type specifically.
-    for src, dest in (
-        ("max_flow_flow_rate_lhr", "max_flow_flow_rate_lhr"),
-        ("max_flow_initial_level_m", "max_flow_initial_level_m"),
-        ("max_flow_final_level_m", "max_flow_final_level_m"),
-        ("max_flow_sight_glass_area_m2", "max_flow_sight_glass_area_m2"),
-        ("max_flow_duration_seconds", "max_flow_duration_seconds"),
+    # having to know about this test type specifically. Always set the key
+    # (to None when missing) so the template's `is not none` check can skip
+    # cleanly instead of tripping on an undefined attribute.
+    for field in (
+        "max_flow_flow_rate_lhr",
+        "max_flow_initial_level_m",
+        "max_flow_final_level_m",
+        "max_flow_sight_glass_area_m2",
+        "max_flow_duration_seconds",
     ):
-        val = _coerce_float(normalized_metadata.pop(src, None))
-        if val is not None:
-            metrics[dest] = val
+        metrics[field] = _coerce_float(normalized_metadata.pop(field, None))
 
     adapted_record = {
         "pump_metadata": normalized_metadata,
@@ -185,6 +190,22 @@ def generate_report_pdf(test_record: Dict[str, Any], chart_png_bytes: bytes) -> 
     }
 
     return _generate_pdf(adapted_record, chart_png_bytes)
+
+
+def _moving_average(values: List[float], window: int) -> List[float]:
+    """Centred moving average; endpoints shrink the window so the output is
+    always the same length as the input (no padding artefacts)."""
+    if window <= 1 or not values:
+        return list(values)
+    n = len(values)
+    half = window // 2
+    out: List[float] = []
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        span = values[lo:hi]
+        out.append(sum(span) / len(span))
+    return out
 
 
 def _coerce_float(value) -> float | None:

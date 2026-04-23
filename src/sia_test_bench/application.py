@@ -162,6 +162,11 @@ class SiaTestBenchApplication(Application):
         # controller's calibration_gauge_area (units: m^2). If injection_controller_app
         # isn't configured, fall back to pump_controller_app — in most test-bench
         # setups the pump controller IS the injection controller.
+        #
+        # Doover serialises the config field using the human-readable *label* as
+        # the key (e.g. "calibration_gauge_area_(cm^2)" or "..._(m^2)"), so we
+        # look for any key that starts with "calibration_gauge_area" instead of
+        # matching the Python attribute name exactly.
         injection_key = (
             self._safe_config(self.config.injection_controller_app)
             or pump_controller_key
@@ -170,8 +175,15 @@ class SiaTestBenchApplication(Application):
             deployment_config.get("applications", {}).get(injection_key)
             if injection_key else None
         )
-        if injection_cfg and injection_cfg.get("calibration_gauge_area") is not None:
-            self.sight_glass_area_m2 = float(injection_cfg["calibration_gauge_area"])
+        area_value = None
+        if injection_cfg:
+            for k, v in injection_cfg.items():
+                if k.startswith("calibration_gauge_area") and v is not None:
+                    area_value = v
+                    log.info(f"Sight glass area config key matched: {k!r} = {v}")
+                    break
+        if area_value is not None:
+            self.sight_glass_area_m2 = float(area_value)
             log.info(f"Sight glass area loaded from {injection_key}: {self.sight_glass_area_m2} m^2")
         else:
             log.warning(
@@ -449,6 +461,7 @@ class SiaTestBenchApplication(Application):
                 'timestamp': int(time.time() * 1000),
                 'pressure': pressure,
                 'tankLevel': tank_level,
+                'levelReading': level_reading,
                 'flowRate': flow_rate,
                 'flowRateUnfiltered': flow_rate_unfiltered,
                 'currentDraw': current_draw,

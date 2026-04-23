@@ -320,7 +320,9 @@
                 <td>seconds</td>
             </tr>
             {% endif %}
-            {% if metrics.max_flow_lph is not none %}
+            {# Max-pressure test holds flow at zero against a closed valve, so
+               the "Maximum Flow Rate" row is meaningless noise in that report. #}
+            {% if metrics.max_flow_lph is not none and not is_max_pressure_test %}
             <tr>
                 <td class="metric-label">Maximum Flow Rate</td>
                 <td class="metric-value">{{ "%.2f"|format(metrics.max_flow_lph) }}</td>

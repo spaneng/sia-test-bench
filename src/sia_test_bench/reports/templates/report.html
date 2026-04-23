@@ -209,6 +209,7 @@
     </div>
 
     {% set is_max_pressure_test = (test_type == 'max_pressure') or (test_name and 'pressure' in (test_name|lower)) %}
+    {% set is_max_flow_test = (test_type == 'max_flow') or (test_name and 'flow' in (test_name|lower) and 'accuracy' not in (test_name|lower)) %}
 
     <div class="section">
         <h2 class="section-title">Pump Details</h2>
@@ -351,6 +352,43 @@
                 <td class="metric-label">Pump RPM at Max Pressure</td>
                 <td class="metric-value">{{ "%.1f"|format(metrics.rpm_at_max_pressure) }}</td>
                 <td>RPM</td>
+            </tr>
+            {% endif %}
+            {% endif %}
+            {% if is_max_flow_test %}
+            {% if metrics.max_flow_flow_rate_lhr is not none %}
+            <tr>
+                <td class="metric-label">Measured Flow Rate</td>
+                <td class="metric-value">{{ "%.2f"|format(metrics.max_flow_flow_rate_lhr) }}</td>
+                <td>L/Hr</td>
+            </tr>
+            {% endif %}
+            {% if metrics.max_flow_sight_glass_area_m2 is not none %}
+            <tr>
+                <td class="metric-label">Sight Glass Area</td>
+                <td class="metric-value">{{ "%.5f"|format(metrics.max_flow_sight_glass_area_m2) }}</td>
+                <td>m²</td>
+            </tr>
+            {% endif %}
+            {% if metrics.max_flow_duration_seconds is not none %}
+            <tr>
+                <td class="metric-label">Test Duration</td>
+                <td class="metric-value">{{ "%.0f"|format(metrics.max_flow_duration_seconds) }}</td>
+                <td>seconds</td>
+            </tr>
+            {% endif %}
+            {% if metrics.max_flow_initial_level_m is not none %}
+            <tr>
+                <td class="metric-label">Initial Level</td>
+                <td class="metric-value">{{ "%.2f"|format(metrics.max_flow_initial_level_m * 1000) }}</td>
+                <td>mm</td>
+            </tr>
+            {% endif %}
+            {% if metrics.max_flow_final_level_m is not none %}
+            <tr>
+                <td class="metric-label">Final Level</td>
+                <td class="metric-value">{{ "%.2f"|format(metrics.max_flow_final_level_m * 1000) }}</td>
+                <td>mm</td>
             </tr>
             {% endif %}
             {% endif %}

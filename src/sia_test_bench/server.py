@@ -210,16 +210,34 @@ class TestBenchServer:
                     else:
                         log.info("Pressure test confirmation received (no target pressure specified)")
             elif command == 'confirm_flow_test':
-                # User clicked Accept button for flow test
-                # Calculate 20% of max pressure as target flow
+                # User clicked Accept on the max_flow_start screen. The new
+                # max-flow test has TWO gates during the regulate phase:
+                #   - pressure ≥ 30% of the pump's marketed max pressure
+                #   - coriolis filtered flow ≥ 97% of the pump's marketed max flow
                 if self.application:
                     target_pressure = data.get('target_pressure')
+                    max_flow_rate = data.get('max_flow_rate')
+                    from .application import MAX_FLOW_PRESSURE_TARGET_PCT, MAX_FLOW_RATE_TARGET_PCT
                     if target_pressure is not None:
-                        # Use 20% of max pressure value as target flow
-                        self.application.target_max_flow = target_pressure * 0.2
-                        log.info(f"Flow test target set to {self.application.target_max_flow} (20% of {target_pressure})")
+                        self.application.target_max_flow_pressure_psi = target_pressure * MAX_FLOW_PRESSURE_TARGET_PCT
+                        log.info(
+                            f"Flow pressure gate: {self.application.target_max_flow_pressure_psi:.2f} PSI "
+                            f"({MAX_FLOW_PRESSURE_TARGET_PCT*100:.0f}% of {target_pressure})"
+                        )
+                    if max_flow_rate is not None:
+                        self.application.flow_accuracy_max_flow_rate = float(max_flow_rate)
+                        self.application.target_max_flow_rate_lhr = max_flow_rate * MAX_FLOW_RATE_TARGET_PCT
+                        log.info(
+                            f"Flow rate gate: {self.application.target_max_flow_rate_lhr:.2f} L/hr "
+                            f"({MAX_FLOW_RATE_TARGET_PCT*100:.0f}% of {max_flow_rate})"
+                        )
                     self.application.shared_flow_confirmation = True
                     log.info("Flow test confirmation received")
+            elif command == 'confirm_flow_valve_closed':
+                # User clicked Continue on the sight-glass-valve prompt in max_flow_prep
+                if self.application:
+                    self.application.shared_flow_valve_closed_confirmation = True
+                    log.info("Flow valve-closed confirmation received")
             elif command == 'confirm_flow_accuracy_test':
                 # User clicked Accept button for flow accuracy test
                 # Calculate 20% of max pressure as target (same as max_flow)
@@ -412,8 +430,7 @@ class TestBenchServer:
     def build_session_snapshot(self) -> dict:
         """Build a snapshot of the current session state for a newly connected client."""
         from sia_test_bench.application import (
-            MAX_PRESSURE_STABILISE_DURATION, MAX_PRESSURE_RUN_DURATION,
-            MAX_FLOW_STABILISE_DURATION, MAX_FLOW_RUN_DURATION,
+            MAX_FLOW_RUN_DURATION,
             FLOW_ACCURACY_STABILISE_DURATION,
             FLOW_ACCURACY_PHASE1_DURATION, FLOW_ACCURACY_PHASE2_DURATION,
             FLOW_ACCURACY_PHASE3_DURATION,
@@ -430,9 +447,6 @@ class TestBenchServer:
 
         if app:
             timer_map = {
-                'max_pressure_stabilise': (app.max_pressure_stabilise_start_time, MAX_PRESSURE_STABILISE_DURATION),
-                'max_pressure': (app.max_pressure_run_start_time, MAX_PRESSURE_RUN_DURATION),
-                'max_flow_stabilise': (app.max_flow_stabilise_start_time, MAX_FLOW_STABILISE_DURATION),
                 'max_flow': (app.max_flow_run_start_time, MAX_FLOW_RUN_DURATION),
                 'flow_accuracy_stabilise': (app.flow_accuracy_stabilise_start_time, FLOW_ACCURACY_STABILISE_DURATION),
                 'flow_accuracy_phase1': (app.flow_accuracy_phase1_start_time, FLOW_ACCURACY_PHASE1_DURATION),
@@ -463,6 +477,19 @@ class TestBenchServer:
         if app and sm_state == 'max_pressure_verify':
             verify_status = app.get_max_pressure_verify_status()
 
+        # Max-flow regulate status for reconnecting clients.
+        max_flow_regulate = None
+        if app and sm_state == 'max_flow_regulate':
+            max_flow_regulate = app.get_max_flow_regulate_status()
+
+        # Prep-phase warning and recorded initial level.
+        max_flow_prep = None
+        if app and sm_state in ('max_flow_prep', 'max_flow_run'):
+            max_flow_prep = {
+                'initial_level_m': app.max_flow_initial_level,
+                'valve_warning': app.max_flow_valve_warning,
+            }
+
         return {
             'type': 'session_snapshot',
             'pumpState': self.pump_state,
@@ -475,6 +502,8 @@ class TestBenchServer:
             'pumpParams': pump_params,
             'selectedPumpId': self.selected_pump_id,
             'maxPressureVerify': verify_status,
+            'maxFlowRegulate': max_flow_regulate,
+            'maxFlowPrep': max_flow_prep,
         }
 
     async def get_pumps_handler(self, request: web.Request) -> web.Response:

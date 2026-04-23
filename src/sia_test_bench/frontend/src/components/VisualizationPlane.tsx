@@ -42,8 +42,13 @@ export function VisualizationPlane() {
     [dataHistory]
   );
   
-  const flowRateData = useMemo(() => 
+  const flowRateData = useMemo(() =>
     dataHistory.map(point => point.flowRate ?? 0),
+    [dataHistory]
+  );
+
+  const flowRateUnfilteredData = useMemo(() =>
+    dataHistory.map(point => point.flowRateUnfiltered ?? point.flowRate ?? 0),
     [dataHistory]
   );
   
@@ -52,8 +57,8 @@ export function VisualizationPlane() {
     [dataHistory]
   );
   
-  const pumpDutyCycleData = useMemo(() => 
-    dataHistory.map(point => (point.pumpDutyCycle as number) ?? 0),
+  const pulseRateData = useMemo(() =>
+    dataHistory.map(point => point.pulseRate ?? 0),
     [dataHistory]
   );
 
@@ -78,6 +83,7 @@ export function VisualizationPlane() {
           <CombinedLiveChart
             pressureData={pressureData}
             flowData={flowRateData}
+            flowDataUnfiltered={flowRateUnfilteredData}
             latestPressure={latestData?.pressure}
             latestFlow={latestData?.flowRate}
           />
@@ -100,6 +106,8 @@ export function VisualizationPlane() {
               <MiniLiveChart
                 label="Flow Rate"
                 data={flowRateData}
+                secondaryData={flowRateUnfilteredData}
+                secondaryColor="rgba(16, 185, 129, 0.35)"
                 unit="L/Hr"
                 color="#10b981"
                 latestValue={latestData?.flowRate}
@@ -117,11 +125,11 @@ export function VisualizationPlane() {
               latestValue={latestData?.currentDraw}
             />
             <MiniLiveChart
-              label="Pump Duty Cycle"
-              data={pumpDutyCycleData}
-              unit="%"
+              label="Pulse Rate"
+              data={pulseRateData}
+              unit="Hz"
               color="#06b6d4"
-              latestValue={latestData?.pumpDutyCycle as number | undefined}
+              latestValue={latestData?.pulseRate ?? 0}
             />
           </div>
       </div>

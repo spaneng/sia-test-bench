@@ -62,7 +62,7 @@ def validate_test_data(payload: Dict[str, Any]) -> None:
         timestamps.append(timestamp)
         
         # Validate numeric fields if present
-        for field in ["pressure", "flowRate"]:
+        for field in ["pressure", "flowRate", "levelReading"]:
             if field in point and point[field] is not None:
                 if not isinstance(point[field], (int, float)):
                     raise ValueError(f"Series point at index {i} has invalid {field} type")

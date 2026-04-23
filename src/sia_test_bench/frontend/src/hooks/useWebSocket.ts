@@ -83,13 +83,43 @@ export function useWebSocket() {
                   stageNumber: data.stage_number ?? 1,
                   elapsed: data.elapsed ?? 0,
                   warning: Boolean(data.warning),
+                  stageTwoWarning: Boolean(data.stage_two_warning),
                   baseline: data.baseline ?? null,
                   current: data.current ?? null,
                   peak: data.peak ?? null,
                   growth: data.growth ?? null,
                   growthTarget: data.growth_target ?? null,
-                  timeStable: data.time_stable ?? null,
-                  stabiliseWindow: data.stabilise_window ?? 5,
+                  targetHoldPsi: data.target_hold_psi ?? null,
+                  stage3Elapsed: data.stage3_elapsed ?? null,
+                  stage3Duration: data.stage3_duration ?? 60,
+                  stage3StartTime: data.stage3_start_time ?? null,
+                  stage3EndTime: data.stage3_end_time ?? null,
+                });
+              } else if (data.test === 'max_flow_regulate') {
+                const { setMaxFlowRegulateStatus } = useTestBenchStore.getState();
+                setMaxFlowRegulateStatus({
+                  currentPressure: data.current_pressure ?? null,
+                  targetPressure: data.target_pressure ?? null,
+                  currentFlow: data.current_flow ?? null,
+                  targetFlow: data.target_flow ?? null,
+                  targetsMet: Boolean(data.targets_met),
+                  holdElapsed: data.hold_elapsed ?? 0,
+                  holdDuration: data.hold_duration ?? 3,
+                });
+              } else if (data.test === 'max_flow_prep') {
+                const { setMaxFlowValveWarning, setMaxFlowRunStatus } = useTestBenchStore.getState();
+                setMaxFlowValveWarning(Boolean(data.valve_warning));
+                setMaxFlowRunStatus({ initialLevelM: data.initial_level_m ?? null });
+              } else if (data.test === 'max_flow') {
+                const { setTestProgress, setMaxFlowRunStatus } = useTestBenchStore.getState();
+                setTestProgress('max_flow', data.progress);
+                setMaxFlowRunStatus({
+                  progress: data.progress ?? 0,
+                  elapsed: data.elapsed ?? 0,
+                  duration: data.duration ?? 60,
+                  initialLevelM: data.initial_level_m ?? null,
+                  currentLevelM: data.current_level_m ?? null,
+                  dropCheckPassed: Boolean(data.drop_check_passed),
                 });
               } else {
                 const { setTestProgress } = useTestBenchStore.getState();
@@ -98,7 +128,7 @@ export function useWebSocket() {
             } else if (data.type === 'test_complete') {
               // Forward test completion to the store
               const { setTestComplete } = useTestBenchStore.getState();
-              setTestComplete(data.test);
+              setTestComplete(data.test, data);
             } else if (data.type === 'state_machine') {
               // Forward state machine state to the store
               const { setStateMachineState } = useTestBenchStore.getState();
@@ -157,6 +187,24 @@ export function useWebSocket() {
                 }
               }
 
+              // Restore max-flow regulate status for reconnecting clients
+              if (data.maxFlowRegulate) {
+                const r = data.maxFlowRegulate;
+                store.setMaxFlowRegulateStatus({
+                  currentPressure: r.current_pressure ?? null,
+                  targetPressure: r.target_pressure ?? null,
+                  currentFlow: r.current_flow ?? null,
+                  targetFlow: r.target_flow ?? null,
+                  targetsMet: Boolean(r.targets_met),
+                  holdElapsed: r.hold_elapsed ?? 0,
+                  holdDuration: r.hold_duration ?? 3,
+                });
+              }
+              if (data.maxFlowPrep) {
+                store.setMaxFlowValveWarning(Boolean(data.maxFlowPrep.valve_warning));
+                store.setMaxFlowRunStatus({ initialLevelM: data.maxFlowPrep.initial_level_m ?? null });
+              }
+
               // Restore max-pressure verify stage for reconnecting clients
               if (data.maxPressureVerify) {
                 const v = data.maxPressureVerify;
@@ -165,13 +213,17 @@ export function useWebSocket() {
                   stageNumber: v.stage_number ?? 1,
                   elapsed: v.elapsed ?? 0,
                   warning: Boolean(v.warning),
+                  stageTwoWarning: Boolean(v.stage_two_warning),
                   baseline: v.baseline ?? null,
                   current: v.current ?? null,
                   peak: v.peak ?? null,
                   growth: v.growth ?? null,
                   growthTarget: v.growth_target ?? null,
-                  timeStable: v.time_stable ?? null,
-                  stabiliseWindow: v.stabilise_window ?? 5,
+                  targetHoldPsi: v.target_hold_psi ?? null,
+                  stage3Elapsed: v.stage3_elapsed ?? null,
+                  stage3Duration: v.stage3_duration ?? 60,
+                  stage3StartTime: v.stage3_start_time ?? null,
+                  stage3EndTime: v.stage3_end_time ?? null,
                 });
               }
 

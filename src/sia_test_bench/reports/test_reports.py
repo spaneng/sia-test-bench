@@ -74,9 +74,35 @@ def render_test_chart_png(series: List[Dict[str, Any]], test_name: str = None) -
     start_time = min(timestamps)
     time_series = [(ts - start_time) for ts in timestamps]
 
-    flow_lph = [point.get("flowRate") or 0.0 for point in series]
     pressure_psi = [point.get("pressure") or 0.0 for point in series]
 
+    # Max-pressure test reports current draw vs pressure (not flow) because
+    # flow is essentially zero against a closed valve, so it tells us nothing
+    # about what the pump is doing. Current draw is the meaningful signal.
+    is_max_pressure = bool(test_name and "pressure" in test_name.lower())
+    if is_max_pressure:
+        left_values = [point.get("currentDraw") or 0.0 for point in series]
+        return _render_chart(
+            time_series, left_values, pressure_psi, test_name=test_name,
+            left_label='Current', left_unit='A', left_color='#E63946',
+        )
+
+    # Max-flow test: plot the analogue sight-glass level (mm) vs time. Pressure
+    # on the secondary axis is still useful to confirm the operator held the
+    # regulator at ~30% during the 60s run.
+    is_max_flow = bool(
+        test_name and "flow" in test_name.lower() and "accuracy" not in test_name.lower()
+    )
+    if is_max_flow:
+        level_mm = [
+            (point.get("levelReading") or 0.0) * 1000.0 for point in series
+        ]
+        return _render_chart(
+            time_series, level_mm, pressure_psi, test_name=test_name,
+            left_label='Sight Glass Level', left_unit='mm', left_color='#2563eb',
+        )
+
+    flow_lph = [point.get("flowRate") or 0.0 for point in series]
     return _render_chart(time_series, flow_lph, pressure_psi, test_name=test_name)
 
 
@@ -129,6 +155,20 @@ def generate_report_pdf(test_record: Dict[str, Any], chart_png_bytes: bytes) -> 
         metrics["stabilized_max_pressure_deviation_pct"] = (
             (stabilized - marketed_max_pressure) / marketed_max_pressure * 100.0
         )
+
+    # Promote max-flow result fields from metadata into the metrics dict so the
+    # report template can render them in the Summary Metrics section without
+    # having to know about this test type specifically.
+    for src, dest in (
+        ("max_flow_flow_rate_lhr", "max_flow_flow_rate_lhr"),
+        ("max_flow_initial_level_m", "max_flow_initial_level_m"),
+        ("max_flow_final_level_m", "max_flow_final_level_m"),
+        ("max_flow_sight_glass_area_m2", "max_flow_sight_glass_area_m2"),
+        ("max_flow_duration_seconds", "max_flow_duration_seconds"),
+    ):
+        val = _coerce_float(normalized_metadata.pop(src, None))
+        if val is not None:
+            metrics[dest] = val
 
     adapted_record = {
         "pump_metadata": normalized_metadata,

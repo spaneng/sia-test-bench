@@ -13,14 +13,17 @@ class SiaTestBenchState:
         {"name": "auto_stop"},
         {"name": "max_pressure_start", "on_enter": "stop_pump"},
         {"name": "max_pressure_verify", "on_enter": "on_enter_max_pressure_verify"},
-        {"name": "max_pressure_stabilise", "on_enter": "on_enter_max_pressure_stabilise"},
-        {"name": "max_pressure_run", "on_enter": "on_enter_max_pressure_run", "on_exit": "stop_pump"},
-        {"name": "max_pressure_end"},
+        {"name": "max_pressure_end", "on_enter": "stop_pump"},
         {"name": "max_flow_start", "on_enter": "stop_pump"},
-        {"name": "max_flow_verify", "timeout": 30, "on_timeout": "on_timeout_max_flow_verify", "on_enter": "start_pump"},
-        {"name": "max_flow_stabilise", "on_enter": "on_enter_max_flow_stabilise"},
+        # Pump at 100%; operator dials the regulator to ~30% pressure while the
+        # coriolis flow climbs to ≥97% of max. Both must hold together briefly.
+        {"name": "max_flow_regulate", "on_enter": "on_enter_max_flow_regulate"},
+        # Pump stopped. Record initial level, prompt operator to close the
+        # sight-glass valve. Re-entered from run if the drop check fails.
+        {"name": "max_flow_prep", "on_enter": "on_enter_max_flow_prep"},
+        # Pump at 100% for 60s. At 10s, verify level is actually dropping.
         {"name": "max_flow_run", "on_enter": "on_enter_max_flow_run", "on_exit": "stop_pump"},
-        {"name": "max_flow_end"},
+        {"name": "max_flow_end", "on_enter": "on_enter_max_flow_end"},
         {"name": "flow_accuracy_start", "on_enter": "stop_pump"},
         {"name": "flow_accuracy_verify", "timeout": 30, "on_timeout": "on_timeout_flow_accuracy_verify", "on_enter": "start_pump"},
         {"name": "flow_accuracy_stabilise", "on_enter": "on_enter_flow_accuracy_stabilise"},
@@ -35,13 +38,16 @@ class SiaTestBenchState:
         {"trigger": "start_auto", "source": "off", "dest": "auto_start"},
         {"trigger": "init_max_pressure", "source": ["off","auto_start","max_pressure_verify"], "dest": "max_pressure_start"},
         {"trigger": "verify_max_pressure", "source": "max_pressure_start", "dest": "max_pressure_verify"},
-        {"trigger": "stabilise_max_pressure", "source": "max_pressure_verify", "dest": "max_pressure_stabilise"},
-        {"trigger": "run_max_pressure", "source": "max_pressure_stabilise", "dest": "max_pressure_run"},
-        {"trigger": "stop_max_pressure", "source": "max_pressure_run", "dest": "max_pressure_end"},
-        {"trigger": "init_max_flow", "source": ["off","auto_start","max_pressure_end","max_flow_verify"], "dest": "max_flow_start"},
-        {"trigger": "verify_max_flow", "source": "max_flow_start", "dest": "max_flow_verify"},
-        {"trigger": "stabilise_max_flow", "source": "max_flow_verify", "dest": "max_flow_stabilise"},
-        {"trigger": "run_max_flow", "source": "max_flow_stabilise", "dest": "max_flow_run"},
+        # Max-pressure verify stage 3 captures report data for 60s; once it
+        # passes, go straight to end. Pump stops via max_pressure_end's on_enter.
+        {"trigger": "end_max_pressure", "source": "max_pressure_verify", "dest": "max_pressure_end"},
+        {"trigger": "init_max_flow", "source": ["off","auto_start","max_pressure_end","max_flow_regulate"], "dest": "max_flow_start"},
+        {"trigger": "regulate_max_flow", "source": "max_flow_start", "dest": "max_flow_regulate"},
+        {"trigger": "prep_max_flow", "source": "max_flow_regulate", "dest": "max_flow_prep"},
+        {"trigger": "run_max_flow", "source": "max_flow_prep", "dest": "max_flow_run"},
+        # Drop-check failure bounces back to prep so the operator can re-close
+        # the valve and continue without restarting the pressure-regulate step.
+        {"trigger": "retry_max_flow_prep", "source": "max_flow_run", "dest": "max_flow_prep"},
         {"trigger": "stop_max_flow", "source": "max_flow_run", "dest": "max_flow_end"},
         {"trigger": "init_flow_accuracy", "source": ["off", "max_flow_end", "flow_accuracy_verify"], "dest": "flow_accuracy_start"},
         {"trigger": "verify_flow_accuracy", "source": "flow_accuracy_start", "dest": "flow_accuracy_verify"},
@@ -121,16 +127,8 @@ class SiaTestBenchState:
                 await self.verify_max_pressure()
         elif s == "max_pressure_verify":
             if self.app.check_max_pressure_verified():
-                log.info("Max pressure verified")
-                await self.stabilise_max_pressure()
-        elif s == "max_pressure_stabilise":
-            if self.app.check_max_pressure_stabilised():
-                log.info("Max pressure stabilisation complete")
-                await self.run_max_pressure()
-        elif s == "max_pressure_run":
-            if self.app.check_max_pressure_end_ready():
-                log.info("Max pressure test run complete")
-                await self.stop_max_pressure()
+                log.info("Max pressure Stage 3 complete — ending test")
+                await self.end_max_pressure()
         elif s == "max_pressure_end":
             if self.app.check_max_pressure_complete():
                 log.info("Max pressure completion acknowledged by frontend")
@@ -143,22 +141,27 @@ class SiaTestBenchState:
                     self.app.clear_shared_testmode()
                     await self.set_off()
         elif s == "max_flow_start":
-            if self.app.check_max_flow_run_ready():
-                log.info("Max flow run ready received - user clicked Accept")
-                # Reset confirmation flag after reading it
+            if self.app.check_max_flow_regulate_ready():
+                log.info("Max flow regulate ready - user clicked Accept on start screen")
                 self.app.shared_flow_confirmation = False
-                await self.verify_max_flow()
-        elif s == "max_flow_verify":
-            if self.app.check_max_flow_verified():
-                log.info("Max flow verified")
-                await self.stabilise_max_flow()
-        elif s == "max_flow_stabilise":
-            if self.app.check_max_flow_stabilised():
-                log.info("Max flow stabilisation complete")
+                await self.regulate_max_flow()
+        elif s == "max_flow_regulate":
+            if self.app.check_max_flow_regulate_complete():
+                log.info("Max flow regulate targets held — moving to prep")
+                await self.prep_max_flow()
+        elif s == "max_flow_prep":
+            if self.app.check_max_flow_run_ready():
+                log.info("Max flow valve-closed confirmed — starting 60s run")
+                self.app.shared_flow_valve_closed_confirmation = False
                 await self.run_max_flow()
         elif s == "max_flow_run":
-            if self.app.check_max_flow_end_ready():
-                log.info("Max flow test run complete")
+            # Drop-check failure takes priority over timer completion — if the
+            # valve was never closed, we bounce back instead of ending.
+            if self.app.check_max_flow_drop_check_failed():
+                log.warning("Max flow drop-check failed — returning to prep")
+                await self.retry_max_flow_prep()
+            elif self.app.check_max_flow_end_ready():
+                log.info("Max flow 60s run complete")
                 await self.stop_max_flow()
         elif s == "max_flow_end":
             if self.app.check_max_flow_complete():
@@ -213,35 +216,59 @@ class SiaTestBenchState:
             log.info("Auto stop received")
             await self.set_off()
 
-    async def on_enter_max_pressure_stabilise(self):
-        """Set the timer when entering max_pressure_stabilise state."""
-        import time
-        self.app.max_pressure_stabilise_start_time = time.time()
-        log.info("Max pressure stabilise started - 10 second timer initiated")
-
-    async def on_enter_max_pressure_run(self):
-        """Set the timer when entering max_pressure_run state."""
-        import time
-        self.app.max_pressure_run_start_time = time.time()
-        log.info("Max pressure run started - 10 second timer initiated")
-
     async def start_pump(self):
         await self.app.start_pump()
 
     async def stop_pump(self):
         await self.app.stop_pump()
 
-    async def on_enter_max_flow_stabilise(self):
-        """Set the timer when entering max_flow_stabilise state."""
+    async def on_enter_max_flow_regulate(self):
+        """Start pump at 100% duty while the operator dials the regulator."""
         import time
-        self.app.max_flow_stabilise_start_time = time.time()
-        log.info("Max flow stabilise started - 10 second timer initiated")
+        self.app.max_flow_regulate_settled_start = None
+        await self.app.start_pump()
+        await self.app.set_pump_duty_cycle(100)
+        log.info(
+            "Max flow regulate started — targets: "
+            f"pressure ≥ {self.app.target_max_flow_pressure_psi} PSI, "
+            f"flow ≥ {self.app.target_max_flow_rate_lhr} L/hr"
+        )
+
+    async def on_enter_max_flow_prep(self):
+        """Stop pump, capture initial level, wait for operator to close valve."""
+        await self.app.stop_pump()
+        # First entry: record initial level; on retry (drop-check failure) the
+        # initial level was already captured on the first entry — keep it.
+        if self.app.max_flow_initial_level is None:
+            self.app.max_flow_initial_level = self.app.current_level_reading
+            log.info(f"Max flow prep: initial level recorded = {self.app.max_flow_initial_level} m")
+        else:
+            log.info("Max flow prep (retry) — keeping original initial level")
+        self.app.max_flow_drop_check_passed = False
+        self.app.max_flow_run_start_time = None
 
     async def on_enter_max_flow_run(self):
-        """Set the timer when entering max_flow_run state."""
+        """Start the 60s run at 100% duty. Fresh level-history buffer."""
         import time
         self.app.max_flow_run_start_time = time.time()
-        log.info("Max flow run started - 10 second timer initiated")
+        self.app.max_flow_level_history = []
+        self.app.max_flow_drop_check_passed = False
+        # Clear stale warning — operator has actioned it and is retrying.
+        self.app.max_flow_valve_warning = False
+        await self.app.start_pump()
+        await self.app.set_pump_duty_cycle(100)
+        log.info("Max flow run started — 60 second timer initiated")
+
+    async def on_enter_max_flow_end(self):
+        """Stop pump, capture final level, compute L/hr."""
+        await self.app.stop_pump()
+        self.app.max_flow_final_level = self.app.current_level_reading
+        self.app.compute_max_flow_result()
+        log.info(
+            f"Max flow end: initial={self.app.max_flow_initial_level} m, "
+            f"final={self.app.max_flow_final_level} m, "
+            f"flow={self.app.max_flow_flow_rate_lhr} L/hr"
+        )
 
     async def on_enter_flow_accuracy_stabilise(self):
         """Set the timer when entering flow_accuracy_stabilise state."""
@@ -292,15 +319,11 @@ class SiaTestBenchState:
         self.app.clear_shared_testmode()
 
     async def on_enter_max_pressure_verify(self):
-        """Reset verify tracking, capture baseline pressure, start the pump."""
+        """Reset verify tracking, capture baseline pressure, start the pump at 100% duty."""
         self.app.reset_max_pressure_verify_tracking()
         await self.app.start_pump()
-        log.info("Max pressure verify started — tracking 10%% build-up from baseline")
-
-    async def on_timeout_max_flow_verify(self):
-        """Handle timeout for max_flow_verify - go back to start."""
-        log.info("Max flow verify timed out - returning to max_flow_start")
-        await self.init_max_flow()
+        await self.app.set_pump_duty_cycle(100)
+        log.info("Max pressure verify started at 100%% duty — tracking 10%% build-up from baseline")
 
     async def on_timeout_flow_accuracy_verify(self):
         """Handle timeout for flow_accuracy_verify - go back to start."""

@@ -4,7 +4,9 @@ export interface PumpData {
   timestamp: number;
   pressure?: number;
   tankLevel?: number;
+  levelReading?: number;
   flowRate?: number;
+  flowRateUnfiltered?: number;
   currentDraw?: number;
   pulseRate?: number;
   valveState?: number | boolean | string;
@@ -38,27 +40,89 @@ export interface MaxPressureVerifyStatus {
   stageNumber: 1 | 2 | 3;
   elapsed: number;
   warning: boolean;
+  stageTwoWarning: boolean;
   baseline: number | null;
   current: number | null;
   peak: number | null;
   growth: number | null;
   growthTarget: number | null;
-  timeStable: number | null;
-  stabiliseWindow: number;
+  targetHoldPsi: number | null;
+  stage3Elapsed: number | null;
+  stage3Duration: number;
+  stage3StartTime: number | null;
+  stage3EndTime: number | null;
 }
+
+export interface MaxFlowRegulateStatus {
+  currentPressure: number | null;
+  targetPressure: number | null;
+  currentFlow: number | null;
+  targetFlow: number | null;
+  targetsMet: boolean;
+  holdElapsed: number;
+  holdDuration: number;
+}
+
+export const DEFAULT_FLOW_REGULATE_STATUS: MaxFlowRegulateStatus = {
+  currentPressure: null,
+  targetPressure: null,
+  currentFlow: null,
+  targetFlow: null,
+  targetsMet: false,
+  holdElapsed: 0,
+  holdDuration: 3,
+};
+
+export interface MaxFlowRunStatus {
+  progress: number;
+  elapsed: number;
+  duration: number;
+  initialLevelM: number | null;
+  currentLevelM: number | null;
+  dropCheckPassed: boolean;
+}
+
+export const DEFAULT_FLOW_RUN_STATUS: MaxFlowRunStatus = {
+  progress: 0,
+  elapsed: 0,
+  duration: 60,
+  initialLevelM: null,
+  currentLevelM: null,
+  dropCheckPassed: false,
+};
+
+export interface MaxFlowResult {
+  flowRateLhr: number | null;
+  initialLevelM: number | null;
+  finalLevelM: number | null;
+  sightGlassAreaM2: number | null;
+  durationSeconds: number | null;
+}
+
+export const DEFAULT_FLOW_RESULT: MaxFlowResult = {
+  flowRateLhr: null,
+  initialLevelM: null,
+  finalLevelM: null,
+  sightGlassAreaM2: null,
+  durationSeconds: null,
+};
 
 export const DEFAULT_VERIFY_STATUS: MaxPressureVerifyStatus = {
   stage: 'checking',
   stageNumber: 1,
   elapsed: 0,
   warning: false,
+  stageTwoWarning: false,
   baseline: null,
   current: null,
   peak: null,
   growth: null,
   growthTarget: null,
-  timeStable: null,
-  stabiliseWindow: 5,
+  targetHoldPsi: null,
+  stage3Elapsed: null,
+  stage3Duration: 60,
+  stage3StartTime: null,
+  stage3EndTime: null,
 };
 
 export interface TestBenchState {
@@ -82,7 +146,10 @@ export interface TestBenchState {
   maxPressureVerifyStatus: MaxPressureVerifyStatus;
   maxPressureStabiliseProgress: number;
   maxPressureProgress: number;
-  maxFlowStabiliseProgress: number;
+  maxFlowRegulateStatus: MaxFlowRegulateStatus;
+  maxFlowRunStatus: MaxFlowRunStatus;
+  maxFlowValveWarning: boolean;
+  maxFlowResult: MaxFlowResult;
   maxFlowProgress: number;
   flowAccuracyStabiliseProgress: number;
   flowAccuracyPhase1Progress: number;
@@ -118,7 +185,11 @@ export interface TestBenchState {
   setStateMachineState: (state: string) => void;
   setTestProgress: (test: string, progress: number) => void;
   setMaxPressureVerifyStatus: (status: MaxPressureVerifyStatus) => void;
-  setTestComplete: (test: string) => void;
+  setMaxFlowRegulateStatus: (status: MaxFlowRegulateStatus) => void;
+  setMaxFlowRunStatus: (status: Partial<MaxFlowRunStatus>) => void;
+  setMaxFlowValveWarning: (warning: boolean) => void;
+  setMaxFlowResult: (result: MaxFlowResult) => void;
+  setTestComplete: (test: string, payload?: Record<string, unknown>) => void;
   resetTestProgress: () => void;
   fetchAvailablePumps: () => Promise<void>;
   sendMessage: (message: object) => void;
@@ -196,7 +267,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   maxPressureVerifyStatus: DEFAULT_VERIFY_STATUS,
   maxPressureStabiliseProgress: 0,
   maxPressureProgress: 0,
-  maxFlowStabiliseProgress: 0,
+  maxFlowRegulateStatus: DEFAULT_FLOW_REGULATE_STATUS,
+  maxFlowRunStatus: DEFAULT_FLOW_RUN_STATUS,
+  maxFlowValveWarning: false,
+  maxFlowResult: DEFAULT_FLOW_RESULT,
   maxFlowProgress: 0,
   flowAccuracyStabiliseProgress: 0,
   flowAccuracyPhase1Progress: 0,
@@ -235,13 +309,21 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   
   setMaxPressureVerifyStatus: (status) => set({ maxPressureVerifyStatus: status }),
 
+  setMaxFlowRegulateStatus: (status) => set({ maxFlowRegulateStatus: status }),
+
+  setMaxFlowRunStatus: (patch) => set((s) => ({
+    maxFlowRunStatus: { ...s.maxFlowRunStatus, ...patch },
+  })),
+
+  setMaxFlowValveWarning: (warning) => set({ maxFlowValveWarning: warning }),
+
+  setMaxFlowResult: (result) => set({ maxFlowResult: result }),
+
   setTestProgress: (test, progress) => {
     if (test === 'max_pressure_stabilise') {
       set({ maxPressureStabiliseProgress: progress });
     } else if (test === 'max_pressure') {
       set({ maxPressureProgress: progress });
-    } else if (test === 'max_flow_stabilise') {
-      set({ maxFlowStabiliseProgress: progress });
     } else if (test === 'max_flow') {
       set({ maxFlowProgress: progress });
     } else if (test === 'flow_accuracy_stabilise') {
@@ -255,11 +337,18 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
     }
   },
   
-  setTestComplete: (test) => {
+  setTestComplete: (test, payload) => {
     if (test === 'max_pressure') {
       set({ maxPressureComplete: true, maxPressureProgress: 100 });
     } else if (test === 'max_flow') {
-      set({ maxFlowComplete: true, maxFlowProgress: 100 });
+      const result: MaxFlowResult = {
+        flowRateLhr: (payload?.flow_rate_lhr as number | null | undefined) ?? null,
+        initialLevelM: (payload?.initial_level_m as number | null | undefined) ?? null,
+        finalLevelM: (payload?.final_level_m as number | null | undefined) ?? null,
+        sightGlassAreaM2: (payload?.sight_glass_area_m2 as number | null | undefined) ?? null,
+        durationSeconds: (payload?.duration_seconds as number | null | undefined) ?? null,
+      };
+      set({ maxFlowComplete: true, maxFlowProgress: 100, maxFlowResult: result });
     } else if (test === 'flow_accuracy') {
       set({ 
         flowAccuracyComplete: true, 
@@ -285,7 +374,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
     maxPressureVerifyStatus: DEFAULT_VERIFY_STATUS,
     maxPressureStabiliseProgress: 0,
     maxPressureProgress: 0,
-    maxFlowStabiliseProgress: 0,
+    maxFlowRegulateStatus: DEFAULT_FLOW_REGULATE_STATUS,
+    maxFlowRunStatus: DEFAULT_FLOW_RUN_STATUS,
+    maxFlowValveWarning: false,
+    maxFlowResult: DEFAULT_FLOW_RESULT,
     maxFlowProgress: 0,
     flowAccuracyStabiliseProgress: 0,
     flowAccuracyPhase1Progress: 0,
@@ -359,7 +451,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
   // Report generation
   finalizeTestAndGenerateReport: async (testId: string) => {
     const state = get();
-    const { selectedPump, dataHistory, testStartTimestamp, testEndTimestamp } = state;
+    const { selectedPump, dataHistory, testStartTimestamp, testEndTimestamp, maxFlowResult } = state;
     
     if (!selectedPump) {
       set({ reportError: 'No pump selected' });
@@ -412,6 +504,9 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
         flowRate: data.flowRate,
         // Include other fields if present
         tankLevel: data.tankLevel,
+        // Raw analogue level reading in metres — used by the max-flow
+        // report to plot the sight-glass level vs time.
+        levelReading: data.levelReading,
         currentDraw: data.currentDraw,
         pulseRate: data.pulseRate,
         temperature: data.temperature,
@@ -436,6 +531,13 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
         max_pressure: selectedPump.maxPressure,
         current_draw: selectedPump.currentDraw,
         stroke_length: selectedPump.strokeLength,
+        // Max-flow result fields — null for non-flow tests, the report template
+        // skips them when absent.
+        max_flow_flow_rate_lhr: maxFlowResult.flowRateLhr,
+        max_flow_initial_level_m: maxFlowResult.initialLevelM,
+        max_flow_final_level_m: maxFlowResult.finalLevelM,
+        max_flow_sight_glass_area_m2: maxFlowResult.sightGlassAreaM2,
+        max_flow_duration_seconds: maxFlowResult.durationSeconds,
       };
       
       // POST to finalize endpoint

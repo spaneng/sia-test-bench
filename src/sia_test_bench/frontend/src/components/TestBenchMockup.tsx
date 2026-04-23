@@ -499,7 +499,7 @@ export function TestBenchMockup() {
             <text x="1381.886719" y="305" text-anchor="middle" fill="#000000" font-size="14" font-weight="600" font-family="Arial, sans-serif">
               {latestData?.pulseRate != null && typeof latestData.pulseRate === 'number'
                 ? `${latestData.pulseRate.toFixed(2)} Hz`
-                : '-- Hz'}
+                : '0.00 Hz'}
             </text>
             <text x="1381.886719" y="335" text-anchor="middle" fill="#000000" font-size="11" font-family="Arial, sans-serif">
               Pulse Rate

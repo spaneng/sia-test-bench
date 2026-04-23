@@ -58,17 +58,24 @@ def render_test_chart_png(
     flow_lph: List[float],
     pressure_psi: List[float],
     figure_size: tuple = (8.27, 5.85),  # A4 landscape aspect ratio
-    test_name: Optional[str] = None
+    test_name: Optional[str] = None,
+    left_label: str = 'Flow Rate',
+    left_unit: str = 'L/Hr',
+    left_color: str = '#FF8000',
 ) -> bytes:
     """
     Render a test chart as PNG bytes with dual Y-axes.
 
     Args:
         time_series: Array of time values (seconds or timestamps)
-        flow_lph: Flow rate series in L/Hr
+        flow_lph: Left-axis series values (flow by default; any signal if
+            `left_label`/`left_unit` are overridden).
         pressure_psi: Pressure series in PSI
         figure_size: Tuple of (width, height) in inches (default: A4 landscape)
         test_name: Optional test name to include in the title
+        left_label: Legend/axis label for the left series
+        left_unit: Unit string appended to the left y-axis label
+        left_color: Color for the left series line and axis
 
     Returns:
         PNG image bytes
@@ -76,12 +83,10 @@ def render_test_chart_png(
     # Create figure with specified size
     fig, ax1 = plt.subplots(figsize=figure_size, facecolor='white')
 
-    # Plot flow on left Y-axis (Solar Injection brand orange)
-    color_flow = '#FF8000'
     ax1.set_xlabel('Time (s)', fontweight='bold')
-    ax1.set_ylabel('Flow Rate (L/Hr)', color=color_flow, fontweight='bold')
-    line1 = ax1.plot(time_series, flow_lph, color=color_flow, linewidth=1.8, label='Flow Rate')
-    ax1.tick_params(axis='y', labelcolor=color_flow)
+    ax1.set_ylabel(f'{left_label} ({left_unit})', color=left_color, fontweight='bold')
+    line1 = ax1.plot(time_series, flow_lph, color=left_color, linewidth=1.8, label=left_label)
+    ax1.tick_params(axis='y', labelcolor=left_color)
     ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
     ax1.set_facecolor('#F9F9F9')
 

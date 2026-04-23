@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import time
@@ -17,20 +16,34 @@ from .utils import PumpType
 log = logging.getLogger()
 
 # Test duration constants (in seconds) - change these to adjust test lengths
-MAX_PRESSURE_STABILISE_DURATION = 10.0
-MAX_PRESSURE_RUN_DURATION = 10.0
-
 # Max-pressure verify stage thresholds
 # Stage 1 -> 2: pressure must grow by this fraction of target from baseline
 MAX_PRESSURE_BUILD_THRESHOLD_PCT = 0.10
-# Stage 2 -> 3: peak must not have grown (beyond tolerance) for this long
-MAX_PRESSURE_STABILISE_WINDOW = 5.0
-# PSI tolerance used when deciding if peak has "grown" (ignores sensor noise)
+# Stage 2 -> 3: pressure must reach this fraction of the target max pressure
+MAX_PRESSURE_TARGET_HOLD_PCT = 0.99
+# PSI tolerance used when tracking peak pressure for display (ignores sensor noise)
 MAX_PRESSURE_STABILISE_TOLERANCE_PSI = 2.0
 # After this long without reaching Stage 2, show a "is the pump bled?" warning
 MAX_PRESSURE_BUILD_WARNING_TIME = 120.0
-MAX_FLOW_STABILISE_DURATION = 10.0
-MAX_FLOW_RUN_DURATION = 10.0
+# After this long in Stage 2 without hitting target, show a "still building" warning
+MAX_PRESSURE_STAGE2_WARNING_TIME = 30.0
+# Stage 3 hold duration — how long pressure must be held at target before verify passes
+# (also defines the window of data captured for the report chart).
+MAX_PRESSURE_STAGE3_DURATION = 60.0
+# Max-flow test: operator dials the regulator until pressure is ~30% of max
+# AND the coriolis filtered flow reaches ≥97% of the pump's rated max flow.
+# Both conditions must be held continuously for MAX_FLOW_REGULATE_HOLD_SECONDS
+# to guard against momentary crossings.
+MAX_FLOW_PRESSURE_TARGET_PCT = 0.30
+MAX_FLOW_RATE_TARGET_PCT = 0.97
+MAX_FLOW_REGULATE_HOLD_SECONDS = 3.0
+# After pump-start in the run phase, wait this long before checking that the
+# sight-glass level is actually dropping. Too short and pump startup masks it.
+MAX_FLOW_DROP_CHECK_DELAY = 10.0
+# Drop-check tolerance: accept the valve as closed if actual drop is at least
+# this fraction of the theoretical drop given max flow rate × area × duration.
+MAX_FLOW_DROP_CHECK_TOLERANCE_FRACTION = 0.50
+MAX_FLOW_RUN_DURATION = 60.0
 FLOW_ACCURACY_STABILISE_DURATION = 10.0
 FLOW_ACCURACY_PHASE1_DURATION = 30.0
 FLOW_ACCURACY_PHASE2_DURATION = 30.0
@@ -70,26 +83,41 @@ class SiaTestBenchApplication(Application):
 
     async def setup(self):
         self.started = time.time()
+        # Drive main_loop at 5 Hz for snappier live plot updates
+        # (pydoover default is 1 Hz)
+        self.loop_target_period = 0.2
         self.state = None
         self.server = None
         self.previous_data = None
         self.shared_testmode = "off"
-        self.max_pressure_stabilise_start_time = None
-        self.max_pressure_run_start_time = None
         # Max-pressure verify 3-stage tracking
         self.max_pressure_verify_start_time = None
         self.max_pressure_verify_baseline = None
         self.max_pressure_peak = None
         self.max_pressure_peak_update_time = None
         self.max_pressure_verify_stage = 'checking'
-        self.max_flow_stabilise_start_time = None
+        self.max_pressure_stage2_start_time = None
+        self.max_pressure_stage3_start_time = None
+        self.max_pressure_stage3_end_time = None
+        # Max-flow test tracking (new 3-phase sequence: regulate -> prep -> run)
+        self.max_flow_regulate_settled_start = None
         self.max_flow_run_start_time = None
+        self.max_flow_initial_level = None
+        self.max_flow_final_level = None
+        self.max_flow_drop_check_passed = False
+        self.max_flow_valve_warning = False
+        # (timestamp, level_m) samples collected during the 60s run — used for
+        # the report chart and the final flow calculation.
+        self.max_flow_level_history = []
+        self.max_flow_flow_rate_lhr = None
+        self.sight_glass_area_m2 = None
         self.flow_accuracy_stabilise_start_time = None
         self.flow_accuracy_phase1_start_time = None
         self.flow_accuracy_phase2_start_time = None
         self.flow_accuracy_phase3_start_time = None
         self.shared_pressure_confirmation = False
         self.shared_flow_confirmation = False
+        self.shared_flow_valve_closed_confirmation = False
         self.shared_flow_accuracy_confirmation = False
         self.shared_pressure_complete_acknowledged = False
         self.shared_flow_complete_acknowledged = False
@@ -98,7 +126,11 @@ class SiaTestBenchApplication(Application):
         self.current_pressure = None
         self.target_max_pressure = None
         self.current_flow = None
-        self.target_max_flow = None
+        # target_max_flow_pressure_psi = pressure at 30% of max (operator gate)
+        # target_max_flow_rate_lhr = coriolis flow threshold (97% of max)
+        self.target_max_flow_pressure_psi = None
+        self.target_max_flow_rate_lhr = None
+        self.current_level_reading = None
         self.target_flow_accuracy = None
         self.flow_accuracy_max_flow_rate = None
 
@@ -125,6 +157,28 @@ class SiaTestBenchApplication(Application):
             log.warning("Pump controller config not found in deployment config, using defaults")
             self.pump_controller_pump = None
             self.pump_max = 1.0
+
+        # Sight-glass area for the max-flow test. Read from the SIA injection
+        # controller's calibration_gauge_area (units: m^2). If injection_controller_app
+        # isn't configured, fall back to pump_controller_app — in most test-bench
+        # setups the pump controller IS the injection controller.
+        injection_key = (
+            self._safe_config(self.config.injection_controller_app)
+            or pump_controller_key
+        )
+        injection_cfg = (
+            deployment_config.get("applications", {}).get(injection_key)
+            if injection_key else None
+        )
+        if injection_cfg and injection_cfg.get("calibration_gauge_area") is not None:
+            self.sight_glass_area_m2 = float(injection_cfg["calibration_gauge_area"])
+            log.info(f"Sight glass area loaded from {injection_key}: {self.sight_glass_area_m2} m^2")
+        else:
+            log.warning(
+                f"calibration_gauge_area not found on injection controller "
+                f"(tried: {injection_key or 'none'}) — max-flow test will be unavailable"
+            )
+            self.sight_glass_area_m2 = None
 
         pulse_source = self._safe_config(self.config.pulse_source, "flow")
 
@@ -250,7 +304,7 @@ class SiaTestBenchApplication(Application):
         """
         session_active = bool(self.server and self.server.websockets)
         active_freq = 7.0
-        idle_freq = 0.5
+        idle_freq = 2.0
 
         for voltage, app_key in self.current_draw_apps.items():
             if not app_key:
@@ -296,7 +350,12 @@ class SiaTestBenchApplication(Application):
 
             pressure = self.get_data_tag("value", pressure_app) if pressure_app else None
             tank_level = self.get_data_tag("level_filled_percentage", tank_app) if tank_app else None
+            # Raw analogue level reading (metres) — used by the max-flow test
+            # to derive volume delta across the sight glass.
+            level_reading = self.get_data_tag("level_reading", tank_app) if tank_app else None
             flow_rate = self.get_data_tag("value", flow_app) if flow_app else None
+            # Raw flow reading (pre-Kalman); plotted alongside the filtered line.
+            flow_rate_unfiltered = self.get_data_tag("unfiltered_value", flow_app) if flow_app else None
             current_draw = self.get_data_tag("value", current_app) if current_app else None
             pump_duty_cycle = self.get_data_tag("PumpDutyCycle_ReadOnly", pump_app) if pump_app else None
             target_pump_duty_cycle = self.get_data_tag("TargetPumpDutyCycle_ReadOnly", pump_app) if pump_app else None
@@ -332,15 +391,18 @@ class SiaTestBenchApplication(Application):
             pulse_rate, _ = fuse_pulse_rates(fusion_detectors)
             valve_state = False #self.get_tag("valve_state")
             
-            # Store current pressure and flow for verification checks
+            # Store current pressure, flow, and level reading for verification checks
             self.current_pressure = pressure
             self.current_flow = flow_rate
+            self.current_level_reading = level_reading
         except Exception as e:
             log.error(f"Error getting tag values: {e}")
             # Use None values if tags are not available
             pressure = None
             tank_level = None
+            level_reading = None
             flow_rate = None
+            flow_rate_unfiltered = None
             current_draw = None
             pump_duty_cycle = None
             target_pump_duty_cycle = None
@@ -349,12 +411,15 @@ class SiaTestBenchApplication(Application):
             pump_state = None
             self.current_pressure = None
             self.current_flow = None
+            self.current_level_reading = None
 
         # Create current data object for comparison
         current_data = {
             'pressure': pressure,
             'tankLevel': tank_level,
+            'levelReading': level_reading,
             'flowRate': flow_rate,
+            'flowRateUnfiltered': flow_rate_unfiltered,
             'currentDraw': current_draw,
             'pumpDutyCycle': pump_duty_cycle,
             'targetPumpDutyCycle': target_pump_duty_cycle,
@@ -385,6 +450,7 @@ class SiaTestBenchApplication(Application):
                 'pressure': pressure,
                 'tankLevel': tank_level,
                 'flowRate': flow_rate,
+                'flowRateUnfiltered': flow_rate_unfiltered,
                 'currentDraw': current_draw,
                 'pumpDutyCycle': pump_duty_cycle,
                 'targetPumpDutyCycle': target_pump_duty_cycle,
@@ -399,8 +465,7 @@ class SiaTestBenchApplication(Application):
             # Update previous data for next comparison
             self.previous_data = current_data.copy()
         
-        # Sleep for 500ms before next iteration
-        await asyncio.sleep(0.5)
+        # Pacing is handled by pydoover via self.loop_target_period (set in setup())
     
     async def cleanup(self):
         """Cleanup resources when shutting down."""
@@ -416,6 +481,14 @@ class SiaTestBenchApplication(Application):
         ui_max = await self.get_ui_max_flow_rate()
         if ui_max is not None and ui_max > 0 and pump_app:
             duty_cycle_pct = (flow_rate / ui_max) * 100
+            await self.set_data_tag("TargetRatePercentageWriteTag", duty_cycle_pct, pump_app, only_if_changed=False)
+
+    async def set_pump_duty_cycle(self, duty_cycle_pct: float):
+        """Directly command a duty-cycle percentage (0-100), bypassing the
+        flow-rate → duty-cycle conversion. Used by max-pressure / max-flow
+        tests that need to pin the pump at 100%."""
+        pump_app = self._safe_config(self.config.pump_controller_app)
+        if pump_app:
             await self.set_data_tag("TargetRatePercentageWriteTag", duty_cycle_pct, pump_app, only_if_changed=False)
 
     def check_off_command(self):
@@ -454,6 +527,9 @@ class SiaTestBenchApplication(Application):
         self.max_pressure_peak = None
         self.max_pressure_peak_update_time = None
         self.max_pressure_verify_stage = 'checking'
+        self.max_pressure_stage2_start_time = None
+        self.max_pressure_stage3_start_time = None
+        self.max_pressure_stage3_end_time = None
 
     def _update_max_pressure_verify_state(self):
         """Update the 3-stage verify state machine based on current pressure.
@@ -461,11 +537,12 @@ class SiaTestBenchApplication(Application):
         Stages:
           - 'checking'   — pump running, waiting for pressure to grow by
                            MAX_PRESSURE_BUILD_THRESHOLD_PCT of target from baseline.
-          - 'building'   — pressure is climbing past the 10%% growth threshold.
-          - 'stabilising'— peak pressure has stopped climbing (no growth beyond
-                           tolerance for STABILISE_WINDOW seconds).
+          - 'building'   — pressure climbing; waits until it reaches
+                           MAX_PRESSURE_TARGET_HOLD_PCT (99%) of the target.
+          - 'stabilising'— target reached; holds for MAX_PRESSURE_STAGE3_DURATION
+                           seconds while report data is captured.
 
-        Returns True when the pressure is deemed stable (ready to exit verify).
+        Returns True when Stage 3 has held for the full duration.
         """
         if self.current_pressure is None or self.target_max_pressure is None:
             return False
@@ -480,32 +557,39 @@ class SiaTestBenchApplication(Application):
             self.max_pressure_peak = self.current_pressure
             self.max_pressure_peak_update_time = now
 
-        # Track peak, resetting the "no growth" timer only when peak grows
-        # beyond the sensor-noise tolerance.
+        # Track peak for display; not used for stage transitions any more.
         if self.current_pressure > (self.max_pressure_peak or 0) + MAX_PRESSURE_STABILISE_TOLERANCE_PSI:
             self.max_pressure_peak = self.current_pressure
             self.max_pressure_peak_update_time = now
         elif self.current_pressure > (self.max_pressure_peak or 0):
-            # Small growth — update peak value but not the timer.
             self.max_pressure_peak = self.current_pressure
 
         growth = self.current_pressure - self.max_pressure_verify_baseline
         build_threshold = self.target_max_pressure * MAX_PRESSURE_BUILD_THRESHOLD_PCT
+        target_hold_psi = self.target_max_pressure * MAX_PRESSURE_TARGET_HOLD_PCT
 
-        # Stage transitions: once we reach 'building' or 'stabilising' we don't
-        # drop back to 'checking'.
+        # Stage 1 -> 2: pressure has started building (passed the 10% growth
+        # threshold vs baseline). Record when Stage 2 began so we can raise
+        # the "still building" warning after 30s.
         if self.max_pressure_verify_stage == 'checking' and growth >= build_threshold:
             self.max_pressure_verify_stage = 'building'
+            self.max_pressure_stage2_start_time = now
 
-        if self.max_pressure_verify_stage in ('building', 'stabilising'):
-            time_since_peak_update = now - (self.max_pressure_peak_update_time or now)
-            if time_since_peak_update >= MAX_PRESSURE_STABILISE_WINDOW:
-                self.max_pressure_verify_stage = 'stabilising'
+        # Stage 2 -> 3: pressure has reached 99% of the target max pressure.
+        # Capture stage-3 start time for both the hold-duration check and the
+        # report chart's time window filter.
+        if (self.max_pressure_verify_stage == 'building'
+                and self.current_pressure >= target_hold_psi):
+            self.max_pressure_verify_stage = 'stabilising'
+            self.max_pressure_stage3_start_time = now
+
+        # Stage 3 exit: held at target for the full stage-3 duration.
+        if (self.max_pressure_verify_stage == 'stabilising'
+                and self.max_pressure_stage3_start_time is not None):
+            stage3_elapsed = now - self.max_pressure_stage3_start_time
+            if stage3_elapsed >= MAX_PRESSURE_STAGE3_DURATION:
+                self.max_pressure_stage3_end_time = now
                 return True
-            # Not yet stable; if we were 'stabilising' but peak grew again,
-            # drop back to 'building'.
-            if self.max_pressure_verify_stage == 'stabilising':
-                self.max_pressure_verify_stage = 'building'
 
         return False
 
@@ -516,10 +600,8 @@ class SiaTestBenchApplication(Application):
     def get_max_pressure_verify_status(self):
         """Return the current verify stage plus numeric diagnostics for the UI.
 
-        Includes raw PSI readings, growth vs threshold, and time spent plateaued
-        so the operator can see *why* the test is still in a given stage.
-        Warning is raised when we've been in 'checking' for longer than
-        MAX_PRESSURE_BUILD_WARNING_TIME seconds (pump may not be bled).
+        Includes raw PSI readings, growth vs threshold, stage timing, and
+        warning flags for stages 1 (pump-not-bled) and 2 (target-not-reached).
         """
         now = time.time()
         elapsed = 0.0
@@ -528,6 +610,13 @@ class SiaTestBenchApplication(Application):
             elapsed = now - self.max_pressure_verify_start_time
             if self.max_pressure_verify_stage == 'checking' and elapsed >= MAX_PRESSURE_BUILD_WARNING_TIME:
                 warning = True
+
+        # Stage-2 warning: been climbing for >30s without hitting 99% of target.
+        stage_two_warning = False
+        if (self.max_pressure_verify_stage == 'building'
+                and self.max_pressure_stage2_start_time is not None):
+            if now - self.max_pressure_stage2_start_time >= MAX_PRESSURE_STAGE2_WARNING_TIME:
+                stage_two_warning = True
 
         stage_number = {'checking': 1, 'building': 2, 'stabilising': 3}.get(
             self.max_pressure_verify_stage, 1
@@ -541,9 +630,13 @@ class SiaTestBenchApplication(Application):
             self.target_max_pressure * MAX_PRESSURE_BUILD_THRESHOLD_PCT
             if self.target_max_pressure is not None else None
         )
-        time_stable = (
-            now - self.max_pressure_peak_update_time
-            if self.max_pressure_peak_update_time is not None else None
+        target_hold_psi = (
+            self.target_max_pressure * MAX_PRESSURE_TARGET_HOLD_PCT
+            if self.target_max_pressure is not None else None
+        )
+        stage3_elapsed = (
+            now - self.max_pressure_stage3_start_time
+            if self.max_pressure_stage3_start_time is not None else None
         )
 
         return {
@@ -551,55 +644,145 @@ class SiaTestBenchApplication(Application):
             'stage_number': stage_number,
             'elapsed': elapsed,
             'warning': warning,
+            'stage_two_warning': stage_two_warning,
             'baseline': baseline,
             'current': current,
             'peak': peak,
             'growth': growth,
             'growth_target': growth_target,
-            'time_stable': time_stable,
-            'stabilise_window': MAX_PRESSURE_STABILISE_WINDOW,
+            'target_hold_psi': target_hold_psi,
+            'stage3_elapsed': stage3_elapsed,
+            'stage3_duration': MAX_PRESSURE_STAGE3_DURATION,
+            'stage3_start_time': self.max_pressure_stage3_start_time,
+            'stage3_end_time': self.max_pressure_stage3_end_time,
         }
 
-    def check_max_pressure_stabilised(self):
-        # Check if stabilisation duration has elapsed since entering max_pressure_stabilise
-        if self.max_pressure_stabilise_start_time is None:
-            return False
-        elapsed_time = time.time() - self.max_pressure_stabilise_start_time
-        return elapsed_time >= MAX_PRESSURE_STABILISE_DURATION
-
-    def check_max_pressure_end_ready(self):
-        # Check if test run duration has elapsed since entering max_pressure_run
-        if self.max_pressure_run_start_time is None:
-            return False
-        elapsed_time = time.time() - self.max_pressure_run_start_time
-        return elapsed_time >= MAX_PRESSURE_RUN_DURATION
     def check_max_flow_start_ready(self):
         return True
-    
-    def check_max_flow_run_ready(self):
+
+    def check_max_flow_regulate_ready(self):
+        """Operator has clicked Accept on the max_flow_start screen."""
         return self.shared_flow_confirmation
-    
-    def check_max_flow_verified(self):
-        log.info(f"Current pressure: {self.current_pressure}, Target flow pressure (20% of max): {self.target_max_flow}")
-        # Check if current pressure reading meets or exceeds 20% of max pressure
-        if self.current_pressure is None or self.target_max_flow is None:
+
+    def _max_flow_regulate_targets_met(self) -> bool:
+        """Both the 30%-pressure gate and the 97%-flow gate are currently met."""
+        if (self.current_pressure is None or self.target_max_flow_pressure_psi is None
+                or self.current_flow is None or self.target_max_flow_rate_lhr is None):
             return False
-        return self.current_pressure >= self.target_max_flow
-    
-    def check_max_flow_stabilised(self):
-        # Check if stabilisation duration has elapsed since entering max_flow_stabilise
-        if self.max_flow_stabilise_start_time is None:
+        return (
+            self.current_pressure >= self.target_max_flow_pressure_psi
+            and self.current_flow >= self.target_max_flow_rate_lhr
+        )
+
+    def check_max_flow_regulate_complete(self):
+        """Operator has held both gates continuously for the hold duration."""
+        now = time.time()
+        if self._max_flow_regulate_targets_met():
+            if self.max_flow_regulate_settled_start is None:
+                self.max_flow_regulate_settled_start = now
+            elif now - self.max_flow_regulate_settled_start >= MAX_FLOW_REGULATE_HOLD_SECONDS:
+                return True
+        else:
+            # Any miss breaks the hold streak — operator must settle again.
+            self.max_flow_regulate_settled_start = None
+        return False
+
+    def get_max_flow_regulate_status(self):
+        """Diagnostics for the regulate UI (live pressure/flow vs targets)."""
+        now = time.time()
+        hold_elapsed = (
+            now - self.max_flow_regulate_settled_start
+            if self.max_flow_regulate_settled_start is not None else 0.0
+        )
+        return {
+            'current_pressure': self.current_pressure,
+            'target_pressure': self.target_max_flow_pressure_psi,
+            'current_flow': self.current_flow,
+            'target_flow': self.target_max_flow_rate_lhr,
+            'targets_met': self._max_flow_regulate_targets_met(),
+            'hold_elapsed': hold_elapsed,
+            'hold_duration': MAX_FLOW_REGULATE_HOLD_SECONDS,
+        }
+
+    def check_max_flow_run_ready(self):
+        """Operator has confirmed the sight-glass valve is closed."""
+        return self.shared_flow_valve_closed_confirmation
+
+    def _expected_level_drop_in(self, seconds: float) -> float | None:
+        """Theoretical drop (metres) over `seconds` at rated max flow.
+
+        Returns None if we don't yet know the rated max flow or sight-glass
+        area — caller should skip the drop check in that case.
+        """
+        if (self.flow_accuracy_max_flow_rate is None
+                or self.sight_glass_area_m2 is None
+                or self.sight_glass_area_m2 <= 0):
+            return None
+        # L/hr -> m^3/s: (lhr / 3600) / 1000
+        volume_rate_m3s = (self.flow_accuracy_max_flow_rate / 3600.0) / 1000.0
+        volume_m3 = volume_rate_m3s * seconds
+        return volume_m3 / self.sight_glass_area_m2
+
+    def check_max_flow_drop_check_failed(self):
+        """After DROP_CHECK_DELAY seconds of running, the level must have dropped
+        by at least TOLERANCE_FRACTION of the theoretical drop. If not, the
+        sight-glass valve is probably still open.
+        """
+        if self.max_flow_drop_check_passed:
             return False
-        elapsed_time = time.time() - self.max_flow_stabilise_start_time
-        return elapsed_time >= MAX_FLOW_STABILISE_DURATION
-    
+        if self.max_flow_run_start_time is None:
+            return False
+        elapsed = time.time() - self.max_flow_run_start_time
+        if elapsed < MAX_FLOW_DROP_CHECK_DELAY:
+            return False
+        if self.max_flow_initial_level is None or self.current_level_reading is None:
+            # Without a valid reading we can't judge — assume OK so we don't
+            # bounce the test indefinitely.
+            self.max_flow_drop_check_passed = True
+            return False
+        expected_drop = self._expected_level_drop_in(MAX_FLOW_DROP_CHECK_DELAY)
+        if expected_drop is None:
+            self.max_flow_drop_check_passed = True
+            return False
+        required_drop = expected_drop * MAX_FLOW_DROP_CHECK_TOLERANCE_FRACTION
+        actual_drop = self.max_flow_initial_level - self.current_level_reading
+        if actual_drop >= required_drop:
+            self.max_flow_drop_check_passed = True
+            return False
+        log.warning(
+            f"Max-flow drop check failed: actual drop {actual_drop:.5f} m < "
+            f"required {required_drop:.5f} m (expected {expected_drop:.5f} m over "
+            f"{MAX_FLOW_DROP_CHECK_DELAY}s). Valve may still be open."
+        )
+        self.max_flow_valve_warning = True
+        return True
+
     def check_max_flow_end_ready(self):
-        # Check if test run duration has elapsed since entering max_flow_run
         if self.max_flow_run_start_time is None:
             return False
         elapsed_time = time.time() - self.max_flow_run_start_time
         return elapsed_time >= MAX_FLOW_RUN_DURATION
-    
+
+    def compute_max_flow_result(self):
+        """Compute L/hr from (initial - final) * area / duration. Caches onto
+        self.max_flow_flow_rate_lhr. Safe to call more than once."""
+        if (self.max_flow_initial_level is None
+                or self.max_flow_final_level is None
+                or self.sight_glass_area_m2 is None):
+            self.max_flow_flow_rate_lhr = None
+            return None
+        level_delta_m = self.max_flow_initial_level - self.max_flow_final_level
+        volume_m3 = level_delta_m * self.sight_glass_area_m2
+        # m^3 per 60s -> L/hr: * 1000 L/m^3 * 60 min/hr (60s -> 1 hr = *60)
+        flow_lhr = (volume_m3 * 1000.0) * (3600.0 / MAX_FLOW_RUN_DURATION)
+        self.max_flow_flow_rate_lhr = flow_lhr
+        log.info(
+            f"Max-flow result: ΔL={level_delta_m:.5f} m, area={self.sight_glass_area_m2} m^2, "
+            f"duration={MAX_FLOW_RUN_DURATION}s -> {flow_lhr:.2f} L/hr"
+        )
+        return flow_lhr
+
+
     def check_flow_accuracy_run_ready(self):
         return self.shared_flow_accuracy_confirmation
     
@@ -671,15 +854,23 @@ class SiaTestBenchApplication(Application):
     def clear_shared_testmode(self):
         self.shared_testmode = "off"
         # Reset timers when clearing test mode
-        self.max_pressure_stabilise_start_time = None
-        self.max_pressure_run_start_time = None
         self.max_pressure_verify_start_time = None
         self.max_pressure_verify_baseline = None
         self.max_pressure_peak = None
         self.max_pressure_peak_update_time = None
         self.max_pressure_verify_stage = 'checking'
-        self.max_flow_stabilise_start_time = None
+        self.max_pressure_stage2_start_time = None
+        self.max_pressure_stage3_start_time = None
+        self.max_pressure_stage3_end_time = None
+        # Max-flow test state
+        self.max_flow_regulate_settled_start = None
         self.max_flow_run_start_time = None
+        self.max_flow_initial_level = None
+        self.max_flow_final_level = None
+        self.max_flow_drop_check_passed = False
+        self.max_flow_valve_warning = False
+        self.max_flow_level_history = []
+        self.max_flow_flow_rate_lhr = None
         self.flow_accuracy_stabilise_start_time = None
         self.flow_accuracy_phase1_start_time = None
         self.flow_accuracy_phase2_start_time = None
@@ -687,6 +878,7 @@ class SiaTestBenchApplication(Application):
         # Reset confirmation flags
         self.shared_pressure_confirmation = False
         self.shared_flow_confirmation = False
+        self.shared_flow_valve_closed_confirmation = False
         self.shared_flow_accuracy_confirmation = False
         # Reset completion acknowledgment flags
         self.shared_pressure_complete_acknowledged = False
@@ -694,7 +886,8 @@ class SiaTestBenchApplication(Application):
         self.shared_flow_accuracy_complete_acknowledged = False
         # Reset target pressure and flow
         self.target_max_pressure = None
-        self.target_max_flow = None
+        self.target_max_flow_pressure_psi = None
+        self.target_max_flow_rate_lhr = None
         self.target_flow_accuracy = None
         self.flow_accuracy_max_flow_rate = None
 
@@ -704,7 +897,7 @@ class SiaTestBenchApplication(Application):
             log.info(f"State changed from {self.previous_state} to {state}")
             
             # Notify frontend when tests complete
-            if state == "max_pressure_end" and self.previous_state == "max_pressure_run":
+            if state == "max_pressure_end" and self.previous_state == "max_pressure_verify":
                 await self.server.push_test_complete({
                     'type': 'test_complete',
                     'test': 'max_pressure'
@@ -716,7 +909,12 @@ class SiaTestBenchApplication(Application):
             elif state == "max_flow_end" and self.previous_state == "max_flow_run":
                 await self.server.push_test_complete({
                     'type': 'test_complete',
-                    'test': 'max_flow'
+                    'test': 'max_flow',
+                    'flow_rate_lhr': self.max_flow_flow_rate_lhr,
+                    'initial_level_m': self.max_flow_initial_level,
+                    'final_level_m': self.max_flow_final_level,
+                    'sight_glass_area_m2': self.sight_glass_area_m2,
+                    'duration_seconds': MAX_FLOW_RUN_DURATION,
                 })
                 log.info("Max flow test completed - notifying frontend")
                 # Reset the acknowledgment flag for next test
@@ -744,48 +942,39 @@ class SiaTestBenchApplication(Application):
                 **status,
             })
 
-        if state == "max_pressure_stabilise" and self.max_pressure_stabilise_start_time is not None:
-            elapsed = time.time() - self.max_pressure_stabilise_start_time
-            progress = min(100.0, (elapsed / MAX_PRESSURE_STABILISE_DURATION) * 100.0)
+        if state == "max_flow_regulate":
+            status = self.get_max_flow_regulate_status()
             await self.server.push_test_progress({
                 'type': 'test_progress',
-                'test': 'max_pressure_stabilise',
-                'progress': progress,
-                'elapsed': elapsed,
-                'duration': MAX_PRESSURE_STABILISE_DURATION
+                'test': 'max_flow_regulate',
+                **status,
             })
-        
-        elif state == "max_pressure_run" and self.max_pressure_run_start_time is not None:
-            elapsed = time.time() - self.max_pressure_run_start_time
-            progress = min(100.0, (elapsed / MAX_PRESSURE_RUN_DURATION) * 100.0)
+
+        elif state == "max_flow_prep":
             await self.server.push_test_progress({
                 'type': 'test_progress',
-                'test': 'max_pressure',
-                'progress': progress,
-                'elapsed': elapsed,
-                'duration': MAX_PRESSURE_RUN_DURATION
+                'test': 'max_flow_prep',
+                'initial_level_m': self.max_flow_initial_level,
+                'valve_warning': self.max_flow_valve_warning,
             })
-        
-        elif state == "max_flow_stabilise" and self.max_flow_stabilise_start_time is not None:
-            elapsed = time.time() - self.max_flow_stabilise_start_time
-            progress = min(100.0, (elapsed / MAX_FLOW_STABILISE_DURATION) * 100.0)
-            await self.server.push_test_progress({
-                'type': 'test_progress',
-                'test': 'max_flow_stabilise',
-                'progress': progress,
-                'elapsed': elapsed,
-                'duration': MAX_FLOW_STABILISE_DURATION
-            })
-        
+
         elif state == "max_flow_run" and self.max_flow_run_start_time is not None:
             elapsed = time.time() - self.max_flow_run_start_time
             progress = min(100.0, (elapsed / MAX_FLOW_RUN_DURATION) * 100.0)
+            # Record level reading for the report chart while the run is active.
+            if self.current_level_reading is not None:
+                self.max_flow_level_history.append(
+                    (time.time(), self.current_level_reading)
+                )
             await self.server.push_test_progress({
                 'type': 'test_progress',
                 'test': 'max_flow',
                 'progress': progress,
                 'elapsed': elapsed,
-                'duration': MAX_FLOW_RUN_DURATION
+                'duration': MAX_FLOW_RUN_DURATION,
+                'initial_level_m': self.max_flow_initial_level,
+                'current_level_m': self.current_level_reading,
+                'drop_check_passed': self.max_flow_drop_check_passed,
             })
         
         elif state == "flow_accuracy_stabilise" and self.flow_accuracy_stabilise_start_time is not None:

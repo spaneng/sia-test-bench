@@ -16,6 +16,13 @@ class SiaTestBenchConfig(config.Schema):
         "Pump Controller App",
         description="The pump 1 application",
     )
+    injection_controller_app = config.Application(
+        "Injection Controller App",
+        description=(
+            "The SIA injection controller whose calibration_gauge_area is "
+            "used as the sight glass area for the max-flow test."
+        ),
+    )
     tank_level_app = config.Application(
         "Tank Level App",
         description="The tank level application",

@@ -13,9 +13,10 @@ export function ControlPlane() {
     stateMachineState,
     targetFlow,
     maxPressureVerifyStatus,
-    maxPressureStabiliseProgress,
-    maxPressureProgress,
-    maxFlowStabiliseProgress,
+    maxFlowRegulateStatus,
+    maxFlowRunStatus,
+    maxFlowValveWarning,
+    maxFlowResult,
     maxFlowProgress,
     flowAccuracyStabiliseProgress,
     flowAccuracyPhase1Progress,
@@ -40,6 +41,7 @@ export function ControlPlane() {
     setTestStartTimestamp,
     setTestEndTimestamp,
     testStartTimestamp,
+    testEndTimestamp,
     dataHistory,
     inputFlash,
     latestData,
@@ -55,13 +57,13 @@ export function ControlPlane() {
   const [pressureStabilising, setPressureStabilising] = useState(false);
   const [pressureFailed, setPressureFailed] = useState(false);
   const [flowStabilising, setFlowStabilising] = useState(false);
-  const [flowFailed, setFlowFailed] = useState(false);
+  const [, setFlowFailed] = useState(false);
   const [flowAccuracyStabilising, setFlowAccuracyStabilising] = useState(false);
   const [flowAccuracyFailed, setFlowAccuracyFailed] = useState(false);
   const [maxPressureVerifying, setMaxPressureVerifying] = useState(false);
   const [maxFlowVerifying, setMaxFlowVerifying] = useState(false);
   const [flowAccuracyVerifying, setFlowAccuracyVerifying] = useState(false);
-  const [maxFlowVerified, setMaxFlowVerified] = useState(false);
+  const [, setMaxFlowVerified] = useState(false);
   const [flowAccuracyVerified, setFlowAccuracyVerified] = useState(false);
   const [showPumpInfoPopover, setShowPumpInfoPopover] = useState(false);
   const [popoverExiting, setPopoverExiting] = useState(false);
@@ -92,12 +94,15 @@ export function ControlPlane() {
   const confirmTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasInitializedSlider = useRef(false);
 
-  // Seed slider from current target duty cycle on first render with data
+  // Seed slider from current target duty cycle on first render with data.
+  // Wait until the selected pump is known — otherwise we'd fall back to a
+  // hardcoded 100 L/Hr max and seed a bogus value (e.g. 100% duty * 100 = 100).
   useEffect(() => {
     if (hasInitializedSlider.current) return;
+    const maxFlow = selectedPump?.maxFlowRate;
+    if (!maxFlow) return;
     const dutyCycle = latestData?.targetPumpDutyCycle;
-    if (dutyCycle == null || dutyCycle === undefined) return;
-    const maxFlow = selectedPump?.maxFlowRate ?? 100;
+    if (dutyCycle == null) return;
     const flowFromDuty = (dutyCycle / 100) * maxFlow;
     setLocalSliderValue(parseFloat(flowFromDuty.toFixed(2)));
     setTargetFlow(parseFloat(flowFromDuty.toFixed(2)));
@@ -183,7 +188,7 @@ export function ControlPlane() {
     // Past the _start state means the user has already confirmed
     const pastStart = (prefix: string) => {
       const suffix = stateMachineState.replace(prefix + '_', '');
-      return ['verify', 'stabilise', 'run', 'end', 'phase1', 'phase2', 'phase3'].includes(suffix);
+      return ['verify', 'stabilise', 'regulate', 'prep', 'run', 'end', 'phase1', 'phase2', 'phase3'].includes(suffix);
     };
 
     if (isMaxPressure && pastStart('max_pressure')) {
@@ -200,7 +205,7 @@ export function ControlPlane() {
     if (stateMachineState === 'max_pressure_verify') {
       setMaxPressureVerifying(true);
     }
-    if (stateMachineState === 'max_flow_verify') {
+    if (stateMachineState === 'max_flow_regulate') {
       setMaxFlowVerifying(true);
     }
     if (stateMachineState === 'flow_accuracy_verify') {
@@ -255,24 +260,20 @@ export function ControlPlane() {
 
   // Track test start/end timestamps based on state machine state
   useEffect(() => {
-    // Max-pressure capture begins at completion of Stage 1/3 of verify
-    // (pressure has crossed the 10% build threshold → stageNumber ≥ 2).
-    // Guarded by testStartTimestamp === null so it only fires once per cycle.
-    const isMaxPressureStage1Complete =
+    // Max-pressure capture begins at the *start of Stage 3* (pressure has
+    // reached 99% of target). The report chart only shows the Stage 3 hold
+    // window. Guarded by testStartTimestamp === null so it fires once.
+    const isMaxPressureStage3Start =
       stateMachineState === 'max_pressure_verify' &&
-      maxPressureVerifyStatus.stageNumber >= 2 &&
+      maxPressureVerifyStatus.stageNumber >= 3 &&
       testStartTimestamp === null;
 
-    // Flow tests don't have a 3-stage verify — start at stabilise entry as before.
-    const isFlowStabiliseState = stateMachineState === 'max_flow_stabilise' ||
+    // Max-flow capture begins when the 60s run starts (max_flow_run entry).
+    // Flow-accuracy continues to capture from stabilise entry as before.
+    const isFlowStabiliseState = stateMachineState === 'max_flow_run' ||
                                  stateMachineState === 'flow_accuracy_stabilise';
 
-    // Fallback for max pressure: if we somehow missed the stage-1 trigger,
-    // still start capture on stabilise entry rather than losing the window.
-    const isMaxPressureStabiliseFallback =
-      stateMachineState === 'max_pressure_stabilise' && testStartTimestamp === null;
-
-    if (isMaxPressureStage1Complete || isFlowStabiliseState || isMaxPressureStabiliseFallback) {
+    if (isMaxPressureStage3Start || isFlowStabiliseState) {
       if (dataHistory.length > 0 && dataHistory[dataHistory.length - 1]?.timestamp) {
         const latestTimestamp = dataHistory[dataHistory.length - 1].timestamp;
         setTestStartTimestamp(latestTimestamp);
@@ -281,22 +282,33 @@ export function ControlPlane() {
       }
     }
 
-    // Test end states
-    const isEndState = stateMachineState === 'max_pressure_end' ||
-                       stateMachineState === 'max_flow_end' ||
-                       stateMachineState === 'flow_accuracy_end';
+    // Max-pressure capture ends when verify passes → state enters
+    // max_pressure_end (stabilise/run are skipped). Guard ensures we only
+    // capture once.
+    const isMaxPressureStage3End =
+      stateMachineState === 'max_pressure_end' && testEndTimestamp === null;
 
-    if (isEndState && dataHistory.length > 0 && dataHistory[dataHistory.length - 1]?.timestamp) {
+    // Flow tests capture end at their dedicated end state.
+    const isFlowEndState = stateMachineState === 'max_flow_end' ||
+                           stateMachineState === 'flow_accuracy_end';
+
+    if ((isMaxPressureStage3End || isFlowEndState)
+        && dataHistory.length > 0
+        && dataHistory[dataHistory.length - 1]?.timestamp) {
       const lastTimestamp = dataHistory[dataHistory.length - 1].timestamp;
       setTestEndTimestamp(lastTimestamp);
     }
 
     // Reset timestamps when leaving test states or starting a new test
+    // Reset test capture window when leaving a test or re-entering a start /
+    // prep state (prep re-entry happens on drop-check failure and we want to
+    // drop the stale run samples).
     if (stateMachineState === 'off' ||
         stateMachineState === 'auto_start' ||
         stateMachineState === 'auto_stop' ||
         stateMachineState === 'max_pressure_start' ||
         stateMachineState === 'max_flow_start' ||
+        stateMachineState === 'max_flow_prep' ||
         stateMachineState === 'flow_accuracy_start') {
       setTestStartTimestamp(null);
       setTestEndTimestamp(null);
@@ -310,9 +322,9 @@ export function ControlPlane() {
       setPressureStabilising(true);
     }
     
-    // On entry to max_pressure_stabilise, we've passed verify — go straight
-    // into Stage 3/3 messaging. No "Pressure verified" green tick.
-    if (stateMachineState === 'max_pressure_stabilise' && maxPressureVerifying && pressureStabilising) {
+    // On entry to max_pressure_end, verify (including Stage 3) has completed.
+    // Clear the verifying flags so the completion UI takes over.
+    if (stateMachineState === 'max_pressure_end' && maxPressureVerifying && pressureStabilising) {
       setMaxPressureVerifying(false);
       setPressureStabilising(false);
     }
@@ -332,37 +344,22 @@ export function ControlPlane() {
     }
   }, [stateMachineState, maxPressureVerifying, pressureStabilising]);
 
-  // Watch state machine for max flow verification/stabilization outcomes
+  // Watch state machine for max flow regulate/prep/run transitions.
+  // The new flow has no "failed verify" — the regulate step waits indefinitely
+  // for the operator, so there's no timeout-bounceback to max_flow_start.
+  // A drop-check failure bounces max_flow_run -> max_flow_prep (with a warning
+  // banner rendered from maxFlowValveWarning) which is handled inline by the
+  // UI, not by these transition flags.
   useEffect(() => {
-    // Track when we're in the verify state
-    if (stateMachineState === 'max_flow_verify') {
+    if (stateMachineState === 'max_flow_regulate') {
       setFlowStabilising(true);
     }
-    
-    // Check if we just entered max_flow_stabilise from max_flow_verify (successful verification)
-    if (stateMachineState === 'max_flow_stabilise' && maxFlowVerifying && flowStabilising) {
+    if (stateMachineState === 'max_flow_prep' && maxFlowVerifying && flowStabilising) {
+      // Regulate step passed — briefly show a green tick before the prep prompt.
       setMaxFlowVerifying(false);
       setMaxFlowVerified(true);
       setFlowStabilising(false);
-      // After showing green tick for 2 seconds, clear it
-      setTimeout(() => {
-        setMaxFlowVerified(false);
-      }, 2000);
-    }
-    
-    // Check if we went back to max_flow_start from max_flow_verify (timeout/failed verification)
-    if (stateMachineState === 'max_flow_start' && flowStabilising) {
-      // Show failure message
-      setMaxFlowVerifying(false);
-      setMaxFlowVerified(false);
-      setFlowFailed(true);
-      setFlowStabilising(false);
-      setIsTestRunning(false);
-      // After showing red X for 2 seconds, reset to Accept button
-      setTimeout(() => {
-        setFlowFailed(false);
-        setMaxFlowConfirmed(false);
-      }, 2000);
+      setTimeout(() => setMaxFlowVerified(false), 1500);
     }
   }, [stateMachineState, maxFlowVerifying, flowStabilising]);
 
@@ -429,52 +426,61 @@ export function ControlPlane() {
     }
   }, [maxPressureComplete, reportUrl, currentTestView, resetTestProgress, sendMessage]);
 
-  // Handle max flow test completion - stay in end state until report generation is successful
+  // Handle max flow test completion - auto-trigger report generation so user
+  // sees "Generating report..." without needing to click a button.
+  useEffect(() => {
+    if (
+      maxFlowComplete &&
+      currentTestView === 'max_flow' &&
+      !isLoadingReport &&
+      !reportUrl &&
+      !reportError
+    ) {
+      handleGenerateReport('max_flow');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxFlowComplete, currentTestView, isLoadingReport, reportUrl, reportError]);
+
   useEffect(() => {
     if (maxFlowComplete && reportUrl) {
-      // Only reset to 'none' after report has been successfully generated
-      // Notify backend that frontend has finished showing completion message
+      // Acknowledge backend once the report is ready so it can move on in auto flows.
       sendMessage({ type: 'test', command: 'acknowledge_flow_complete' });
-      
-      if (currentTestView === 'max_flow') {
-        setCurrentTestView('none');
-        resetTestProgress();
-        setIsTestRunning(false);
-      }
-      
-      // Reset test-specific flags
-      setMaxFlowConfirmed(false);
-      setMaxFlowVerifying(false);
-      setMaxFlowVerified(false);
-    }
-  }, [maxFlowComplete, reportUrl, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
 
-  // Handle flow accuracy test completion - stay in end state until report generation is successful
+      // Auto-mode chains into the next test — navigate back automatically.
+      // Standalone max_flow waits for the user's Back button (shown by
+      // renderReportGenerationUI alongside the Download Report link).
+      if (currentTestView === 'auto') {
+        resetTestProgress();
+      }
+    }
+  }, [maxFlowComplete, reportUrl, currentTestView, resetTestProgress, sendMessage]);
+
+  // Handle flow accuracy test completion - auto-trigger report generation
+  useEffect(() => {
+    if (
+      flowAccuracyComplete &&
+      currentTestView === 'flow_accuracy' &&
+      !isLoadingReport &&
+      !reportUrl &&
+      !reportError
+    ) {
+      handleGenerateReport('flow_accuracy');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowAccuracyComplete, currentTestView, isLoadingReport, reportUrl, reportError]);
+
   useEffect(() => {
     if (flowAccuracyComplete && reportUrl) {
-      // Only reset to 'none' after report has been successfully generated
-      // Notify backend that frontend has finished showing completion message
+      // Acknowledge backend once the report is ready so it can move on in auto flows.
       sendMessage({ type: 'test', command: 'acknowledge_flow_accuracy_complete' });
-      
-      if (currentTestView === 'flow_accuracy') {
-        setCurrentTestView('none');
+
+      // Auto-mode chains into the next test — navigate back automatically.
+      // Standalone flow_accuracy waits for the user's Back button.
+      if (currentTestView === 'auto') {
         resetTestProgress();
-        setIsTestRunning(false);
-      } else if (currentTestView === 'auto') {
-        // In auto mode, after flow accuracy completes, return to test selection
-        setCurrentTestView('none');
-        resetTestProgress();
-        setIsTestRunning(false);
       }
-      
-      // Reset test-specific flags
-      setFlowAccuracyConfirmed(false);
-      setFlowAccuracyVerifying(false);
-      setFlowAccuracyVerified(false);
-      setFlowAccuracyFailed(false);
-      setFlowAccuracyStabilising(false);
     }
-  }, [flowAccuracyComplete, reportUrl, currentTestView, setCurrentTestView, resetTestProgress, sendMessage]);
+  }, [flowAccuracyComplete, reportUrl, currentTestView, resetTestProgress, sendMessage]);
 
   // Show pump info view when a pump is first selected
   useEffect(() => {
@@ -686,13 +692,14 @@ export function ControlPlane() {
       setMaxFlowConfirmed(true);
       setMaxFlowVerifying(true);
       setIsTestRunning(true);
-      // Send confirmation to backend with target pressure (for calculating 20% as flow target)
-      sendMessage({ 
-        type: 'test', 
+      // Backend derives the pressure (30% of max) and flow (97% of max) gates
+      // from these two fields, so both are required.
+      sendMessage({
+        type: 'test',
         command: 'confirm_flow_test',
-        target_pressure: selectedPump?.maxPressure
+        target_pressure: selectedPump?.maxPressure,
+        max_flow_rate: selectedPump?.maxFlowRate,
       });
-      // State machine will handle verification - no setTimeout needed
     } else if (testToConfirm === 'flow_accuracy') {
       setFlowAccuracyConfirmed(true);
       setFlowAccuracyVerifying(true);
@@ -706,6 +713,12 @@ export function ControlPlane() {
       });
       // State machine will handle verification - no setTimeout needed
     }
+  };
+
+  const handleConfirmValveClosed = () => {
+    // Operator has closed the sight-glass valve in max_flow_prep; advance to run.
+    sendMessage({ type: 'test', command: 'confirm_flow_valve_closed' });
+    sendMessage({ type: 'input_activity', elementId: 'confirm_flow_valve_closed' });
   };
 
   const handleChangePump = () => {
@@ -864,6 +877,155 @@ export function ControlPlane() {
         >
           Generate Report
         </button>
+      </div>
+    );
+  };
+
+  // Rendering helper for the max-flow test body. Rendered inside both the
+  // standalone and auto-chained views so a single update covers both.
+  const renderMaxFlowBody = (viewKey: string) => {
+    const fmt = (v: number | null | undefined, digits = 1) =>
+      (v === null || v === undefined || Number.isNaN(v)) ? '—' : v.toFixed(digits);
+    const targetPressure = selectedPump?.maxPressure ? selectedPump.maxPressure * 0.30 : null;
+    const targetFlow = selectedPump?.maxFlowRate ? selectedPump.maxFlowRate * 0.97 : null;
+
+    let body;
+
+    if (maxFlowComplete) {
+      body = (
+        <div className="test-completion-section">
+          <div className="success-checkmark">✓</div>
+          <p className="completion-message">Flow Test Complete</p>
+          {maxFlowResult.flowRateLhr !== null && (
+            <div className="test-result-summary">
+              <div className="test-result-primary">
+                <span className="test-result-label">Measured flow rate</span>
+                <span className="test-result-value">{fmt(maxFlowResult.flowRateLhr, 2)} L/Hr</span>
+              </div>
+              <div className="test-result-details">
+                <div>Initial level: {fmt((maxFlowResult.initialLevelM ?? 0) * 1000, 2)} mm</div>
+                <div>Final level: {fmt((maxFlowResult.finalLevelM ?? 0) * 1000, 2)} mm</div>
+                <div>Sight glass area: {fmt(maxFlowResult.sightGlassAreaM2, 5)} m²</div>
+                <div>Duration: {fmt(maxFlowResult.durationSeconds, 0)} s</div>
+              </div>
+            </div>
+          )}
+          {renderReportGenerationUI('max_flow')}
+        </div>
+      );
+    } else if (!maxFlowConfirmed) {
+      body = (
+        <div className="test-confirmation-section">
+          <p className="confirmation-message">
+            The pump will run at 100% duty cycle.
+            <br />
+            You'll adjust the pressure regulator to reach {fmt(targetPressure, 1)} PSI
+            (30% of max) while the flow meter reads at least {fmt(targetFlow, 1)} L/Hr
+            (97% of max).
+          </p>
+          <button
+            className="btn btn-primary btn-confirm"
+            onClick={handleConfirmValves}
+            data-element-id="confirm_max_flow"
+          >
+            Accept
+          </button>
+        </div>
+      );
+    } else if (stateMachineState === 'max_flow_regulate') {
+      const status = maxFlowRegulateStatus;
+      const pressureOk = status.currentPressure !== null && status.targetPressure !== null
+        && status.currentPressure >= status.targetPressure;
+      const flowOk = status.currentFlow !== null && status.targetFlow !== null
+        && status.currentFlow >= status.targetFlow;
+      return (
+        <>
+          <div className="test-view" key={viewKey}>
+            <div className="test-run-section flow-regulate-section">
+              <p className="test-run-message">Adjust the pressure regulator</p>
+              <div className="regulate-stats">
+                <div className={`regulate-stat ${pressureOk ? 'ok' : ''}`}>
+                  <div className="regulate-stat-label">Pressure</div>
+                  <div className="regulate-stat-current">{fmt(status.currentPressure, 1)} PSI</div>
+                  <div className="regulate-stat-target">target ≥ {fmt(status.targetPressure, 1)} PSI</div>
+                </div>
+                <div className={`regulate-stat ${flowOk ? 'ok' : ''}`}>
+                  <div className="regulate-stat-label">Flow</div>
+                  <div className="regulate-stat-current">{fmt(status.currentFlow, 1)} L/Hr</div>
+                  <div className="regulate-stat-target">target ≥ {fmt(status.targetFlow, 1)} L/Hr</div>
+                </div>
+              </div>
+              <p className="regulate-hint">
+                {status.targetsMet
+                  ? `Holding… ${status.holdElapsed.toFixed(1)} / ${status.holdDuration.toFixed(1)} s`
+                  : 'Both targets must hold together for 3 s'}
+              </p>
+            </div>
+          </div>
+        </>
+      );
+    } else if (stateMachineState === 'max_flow_prep') {
+      return (
+        <>
+          <div className="test-view" key={viewKey}>
+            <div className="test-confirmation-section">
+              {maxFlowValveWarning && (
+                <div className="regulate-warning">
+                  Level reading from sight glass sensor was not dropping, please ensure the valve has been closed.
+                </div>
+              )}
+              <p className="confirmation-message">
+                Close the sight glass valve, then press Continue.
+              </p>
+              <button
+                className="btn btn-primary btn-confirm"
+                onClick={handleConfirmValveClosed}
+                data-element-id="confirm_flow_valve_closed"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </>
+      );
+    } else if (stateMachineState === 'max_flow_run') {
+      const current = maxFlowRunStatus.currentLevelM;
+      const initial = maxFlowRunStatus.initialLevelM;
+      return (
+        <>
+          <div className="test-view" key={viewKey}>
+            <div className="test-run-section">
+              <p className="test-run-message">Running flow test…</p>
+              <div className="regulate-stats">
+                <div className="regulate-stat">
+                  <div className="regulate-stat-label">Level</div>
+                  <div className="regulate-stat-current">{fmt((current ?? 0) * 1000, 2)} mm</div>
+                  <div className="regulate-stat-target">initial {fmt((initial ?? 0) * 1000, 2)} mm</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {isTestRunning && (
+            <div className="test-progress-container">
+              <div className="test-progress-bar">
+                <div className="test-progress-fill" style={{ width: `${maxFlowProgress}%` }}></div>
+              </div>
+              <p className="test-progress-text">{maxFlowProgress.toFixed(1)}%</p>
+            </div>
+          )}
+        </>
+      );
+    } else {
+      body = (
+        <div className="test-run-section">
+          <p className="test-run-message">Preparing test…</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="test-view" key={viewKey}>
+        {body}
       </div>
     );
   };
@@ -1234,7 +1396,7 @@ export function ControlPlane() {
             {currentTestView === 'auto' && (
               <>
                 {/* Show Max Pressure Test UI when in max_pressure states */}
-                {(stateMachineState === 'max_pressure_start' || stateMachineState === 'max_pressure_verify' || stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run' || stateMachineState === 'max_pressure_end') && (
+                {(stateMachineState === 'max_pressure_start' || stateMachineState === 'max_pressure_verify' || stateMachineState === 'max_pressure_end') && (
                   <>
                     <div className="test-view" key="auto-max-pressure-view">
                       {maxPressureComplete ? (
@@ -1284,26 +1446,47 @@ export function ControlPlane() {
                               <>
                                 Pressure climbing — now{' '}
                                 <strong>{(maxPressureVerifyStatus.current ?? 0).toFixed(1)} PSI</strong>
-                                {maxPressureVerifyStatus.peak !== null && (
-                                  <> (peak {maxPressureVerifyStatus.peak.toFixed(1)} PSI)</>
+                                {maxPressureVerifyStatus.targetHoldPsi !== null && (
+                                  <> / target {maxPressureVerifyStatus.targetHoldPsi.toFixed(1)} PSI</>
                                 )}
                               </>
                             )}
                             {maxPressureVerifyStatus.stage === 'stabilising' && (
                               <>
                                 Holding at{' '}
-                                <strong>{(maxPressureVerifyStatus.peak ?? 0).toFixed(1)} PSI</strong>
-                                {' '}— stable for{' '}
-                                <strong>
-                                  {(maxPressureVerifyStatus.timeStable ?? 0).toFixed(1)}s /{' '}
-                                  {maxPressureVerifyStatus.stabiliseWindow.toFixed(1)}s
-                                </strong>
+                                <strong>{(maxPressureVerifyStatus.current ?? 0).toFixed(1)} PSI</strong>
                               </>
                             )}
                           </p>
+                          {maxPressureVerifyStatus.stage === 'stabilising' && (
+                            <>
+                              <div className="stage3-progress">
+                                <div className="test-progress-bar">
+                                  <div
+                                    className="test-progress-fill"
+                                    style={{
+                                      width: `${Math.min(100, ((maxPressureVerifyStatus.stage3Elapsed ?? 0) / maxPressureVerifyStatus.stage3Duration) * 100)}%`,
+                                    }}
+                                  />
+                                </div>
+                                <p className="test-progress-text">
+                                  {(maxPressureVerifyStatus.stage3Elapsed ?? 0).toFixed(1)}s /{' '}
+                                  {maxPressureVerifyStatus.stage3Duration.toFixed(1)}s
+                                </p>
+                              </div>
+                              <p className="verification-detail">
+                                Capturing report data…
+                              </p>
+                            </>
+                          )}
                           {maxPressureVerifyStatus.warning && (
                             <p className="verification-warning">
                               Pump is not building pressure — are you sure the pump is bled correctly?
+                            </p>
+                          )}
+                          {maxPressureVerifyStatus.stageTwoWarning && (
+                            <p className="verification-warning">
+                              Pump hasn't yet reached max pressure — still building.
                             </p>
                           )}
                         </div>
@@ -1312,119 +1495,22 @@ export function ControlPlane() {
                           <div className="error-cross">✗</div>
                           <p className="verification-message error">Pressure not reached</p>
                         </div>
-                      ) : (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') ? (
-                        <div className="test-verification-section">
-                          <div className="loading-spinner"></div>
-                          <p className="verification-message">
-                            <strong>Stage 3 of 3 — </strong>Pressure is stabilising
-                          </p>
-                        </div>
                       ) : (
                         <div className="test-run-section">
                           <p className="test-run-message">Preparing test...</p>
                         </div>
                       )}
                     </div>
-                    {/* Unified Stage 3 progress: stabilise + run are 10s each. */}
-                    {isTestRunning &&
-                      (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') && (() => {
-                        const unified = stateMachineState === 'max_pressure_stabilise'
-                          ? maxPressureStabiliseProgress * 0.5
-                          : 50 + maxPressureProgress * 0.5;
-                        return (
-                          <div className="test-progress-container">
-                            <div className="test-progress-bar">
-                              <div
-                                className="test-progress-fill"
-                                style={{ width: `${unified}%` }}
-                              ></div>
-                            </div>
-                            <p className="test-progress-text">{unified.toFixed(1)}%</p>
-                          </div>
-                        );
-                      })()}
                   </>
                 )}
-                
+
                 {/* Show Max Flow Test UI when in max_flow states */}
-                {(stateMachineState === 'max_flow_start' || stateMachineState === 'max_flow_verify' || stateMachineState === 'max_flow_stabilise' || stateMachineState === 'max_flow_run' || stateMachineState === 'max_flow_end') && (
-                  <>
-                    <div className="test-view" key="auto-max-flow-view">
-                      {maxFlowComplete ? (
-                        <div className="test-completion-section">
-                          <div className="success-checkmark">✓</div>
-                          <p className="completion-message">Flow Test Complete</p>
-                          {renderReportGenerationUI('max_flow')}
-                        </div>
-                      ) : !maxFlowConfirmed ? (
-                        <div className="test-confirmation-section">
-                          <p className="confirmation-message">
-                            Please confirm the valves and relief have been set.
-                            <br />
-                            <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
-                          </p>
-                          <button
-                            className="btn btn-primary btn-confirm"
-                            onClick={handleConfirmValves}
-                            data-element-id="confirm_max_flow"
-                          >
-                            Accept
-                          </button>
-                        </div>
-                      ) : maxFlowVerifying ? (
-                        <div className="test-verification-section">
-                          <div className="loading-spinner"></div>
-                          <p className="verification-message">Verifying flow...</p>
-                        </div>
-                      ) : maxFlowVerified ? (
-                        <div className="test-verification-section">
-                          <div className="success-checkmark">✓</div>
-                          <p className="verification-message">Flow verified</p>
-                        </div>
-                      ) : flowFailed ? (
-                        <div className="test-verification-section">
-                          <div className="error-cross">✗</div>
-                          <p className="verification-message error">Flow not reached</p>
-                        </div>
-                      ) : stateMachineState === 'max_flow_stabilise' ? (
-                        <div className="test-run-section">
-                          <p className="test-run-message">Flow stabilising...</p>
-                        </div>
-                      ) : stateMachineState === 'max_flow_run' ? (
-                        <div className="test-run-section">
-                          <p className="test-run-message">Running test...</p>
-                        </div>
-                      ) : (
-                        <div className="test-run-section">
-                          <p className="test-run-message">Preparing test...</p>
-                        </div>
-                      )}
-                    </div>
-                    {/* Progress bar for stabilise phase */}
-                    {isTestRunning && stateMachineState === 'max_flow_stabilise' && (
-                      <div className="test-progress-container">
-                        <div className="test-progress-bar">
-                          <div 
-                            className="test-progress-fill" 
-                            style={{ width: `${maxFlowStabiliseProgress}%` }}
-                          ></div>
-                        </div>
-                        <p className="test-progress-text">{maxFlowStabiliseProgress.toFixed(1)}%</p>
-                      </div>
-                    )}
-                    {/* Progress bar for run phase */}
-                    {isTestRunning && stateMachineState === 'max_flow_run' && (
-                      <div className="test-progress-container">
-                        <div className="test-progress-bar">
-                          <div 
-                            className="test-progress-fill" 
-                            style={{ width: `${maxFlowProgress}%` }}
-                          ></div>
-                        </div>
-                        <p className="test-progress-text">{maxFlowProgress.toFixed(1)}%</p>
-                      </div>
-                    )}
-                  </>
+                {(stateMachineState === 'max_flow_start'
+                  || stateMachineState === 'max_flow_regulate'
+                  || stateMachineState === 'max_flow_prep'
+                  || stateMachineState === 'max_flow_run'
+                  || stateMachineState === 'max_flow_end') && (
+                  renderMaxFlowBody('auto-max-flow-view')
                 )}
                 
                 {/* Show Flow Accuracy Test UI when in flow_accuracy states */}
@@ -1598,26 +1684,47 @@ export function ControlPlane() {
                           <>
                             Pressure climbing — now{' '}
                             <strong>{(maxPressureVerifyStatus.current ?? 0).toFixed(1)} PSI</strong>
-                            {maxPressureVerifyStatus.peak !== null && (
-                              <> (peak {maxPressureVerifyStatus.peak.toFixed(1)} PSI)</>
+                            {maxPressureVerifyStatus.targetHoldPsi !== null && (
+                              <> / target {maxPressureVerifyStatus.targetHoldPsi.toFixed(1)} PSI</>
                             )}
                           </>
                         )}
                         {maxPressureVerifyStatus.stage === 'stabilising' && (
                           <>
                             Holding at{' '}
-                            <strong>{(maxPressureVerifyStatus.peak ?? 0).toFixed(1)} PSI</strong>
-                            {' '}— stable for{' '}
-                            <strong>
-                              {(maxPressureVerifyStatus.timeStable ?? 0).toFixed(1)}s /{' '}
-                              {maxPressureVerifyStatus.stabiliseWindow.toFixed(1)}s
-                            </strong>
+                            <strong>{(maxPressureVerifyStatus.current ?? 0).toFixed(1)} PSI</strong>
                           </>
                         )}
                       </p>
+                      {maxPressureVerifyStatus.stage === 'stabilising' && (
+                        <>
+                          <div className="stage3-progress">
+                            <div className="test-progress-bar">
+                              <div
+                                className="test-progress-fill"
+                                style={{
+                                  width: `${Math.min(100, ((maxPressureVerifyStatus.stage3Elapsed ?? 0) / maxPressureVerifyStatus.stage3Duration) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <p className="test-progress-text">
+                              {(maxPressureVerifyStatus.stage3Elapsed ?? 0).toFixed(1)}s /{' '}
+                              {maxPressureVerifyStatus.stage3Duration.toFixed(1)}s
+                            </p>
+                          </div>
+                          <p className="verification-detail">
+                            Capturing report data…
+                          </p>
+                        </>
+                      )}
                       {maxPressureVerifyStatus.warning && (
                         <p className="verification-warning">
                           Pump is not building pressure — are you sure the pump is bled correctly?
+                        </p>
+                      )}
+                      {maxPressureVerifyStatus.stageTwoWarning && (
+                        <p className="verification-warning">
+                          Pump hasn't yet reached max pressure — still building.
                         </p>
                       )}
                     </div>
@@ -1626,119 +1733,15 @@ export function ControlPlane() {
                       <div className="error-cross">✗</div>
                       <p className="verification-message error">Pressure not reached</p>
                     </div>
-                  ) : (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') ? (
-                    <div className="test-verification-section">
-                      <div className="loading-spinner"></div>
-                      <p className="verification-message">
-                        <strong>Stage 3 of 3 — </strong>Pressure is stabilising
-                      </p>
-                    </div>
                   ) : (
                     <div className="test-run-section">
                       <p className="test-run-message">Preparing test...</p>
                     </div>
                   )}
                 </div>
-                {/* Unified Stage 3 progress: stabilise + run are 10s each, so each
-                    phase is half of the combined bar. */}
-                {isTestRunning && currentTestView === 'max_pressure' &&
-                  (stateMachineState === 'max_pressure_stabilise' || stateMachineState === 'max_pressure_run') && (() => {
-                    const unified = stateMachineState === 'max_pressure_stabilise'
-                      ? maxPressureStabiliseProgress * 0.5
-                      : 50 + maxPressureProgress * 0.5;
-                    return (
-                      <div className="test-progress-container">
-                        <div className="test-progress-bar">
-                          <div
-                            className="test-progress-fill"
-                            style={{ width: `${unified}%` }}
-                          ></div>
-                        </div>
-                        <p className="test-progress-text">{unified.toFixed(1)}%</p>
-                      </div>
-                    );
-                  })()}
               </>
             )}
-            {currentTestView === 'max_flow' && (
-              <>
-                <div className="test-view" key="max-flow-view">
-                  {maxFlowComplete ? (
-                    <div className="test-completion-section">
-                      <div className="success-checkmark">✓</div>
-                      <p className="completion-message">Flow Test Complete</p>
-                      {renderReportGenerationUI('max_flow')}
-                    </div>
-                  ) : !maxFlowConfirmed ? (
-                    <div className="test-confirmation-section">
-                      <p className="confirmation-message">
-                        Please confirm the valves and relief have been set.
-                        <br />
-                        <strong>Please ensure that pressure has been set to {selectedPump?.maxPressure ? (selectedPump.maxPressure * 0.2).toFixed(1) : 'N/A'} PSI (20% of max pressure).</strong>
-                      </p>
-                      <button
-                        className="btn btn-primary btn-confirm"
-                        onClick={handleConfirmValves}
-                        data-element-id="confirm_max_flow"
-                      >
-                        Accept
-                      </button>
-                    </div>
-                  ) : maxFlowVerifying ? (
-                    <div className="test-verification-section">
-                      <div className="loading-spinner"></div>
-                      <p className="verification-message">Verifying flow...</p>
-                    </div>
-                  ) : maxFlowVerified ? (
-                    <div className="test-verification-section">
-                      <div className="success-checkmark">✓</div>
-                      <p className="verification-message">Flow verified</p>
-                    </div>
-                  ) : flowFailed ? (
-                    <div className="test-verification-section">
-                      <div className="error-cross">✗</div>
-                      <p className="verification-message error">Flow not reached</p>
-                    </div>
-                  ) : stateMachineState === 'max_flow_stabilise' ? (
-                    <div className="test-run-section">
-                      <p className="test-run-message">Flow stabilising...</p>
-                    </div>
-                  ) : stateMachineState === 'max_flow_run' ? (
-                    <div className="test-run-section">
-                      <p className="test-run-message">Running test...</p>
-                    </div>
-                  ) : (
-                    <div className="test-run-section">
-                      <p className="test-run-message">Preparing test...</p>
-                    </div>
-                  )}
-                </div>
-                {/* Progress bar for stabilise phase */}
-                {isTestRunning && currentTestView === 'max_flow' && stateMachineState === 'max_flow_stabilise' && (
-                  <div className="test-progress-container">
-                    <div className="test-progress-bar">
-                      <div 
-                        className="test-progress-fill" 
-                        style={{ width: `${maxFlowStabiliseProgress}%` }}
-                      ></div>
-                    </div>
-                    <p className="test-progress-text">{maxFlowStabiliseProgress.toFixed(1)}%</p>
-                  </div>
-                )}
-                {/* Progress bar for run phase */}
-                {isTestRunning && currentTestView === 'max_flow' && stateMachineState === 'max_flow_run' && (
-                  <div className="test-progress-container">
-                    <div className="test-progress-bar">
-                      <div 
-                        className="test-progress-fill" 
-                        style={{ width: `${maxFlowProgress}%` }}
-                      ></div>
-                    </div>
-                    <p className="test-progress-text">{maxFlowProgress.toFixed(1)}%</p>
-                  </div>
-                )}
-              </>
-            )}
+            {currentTestView === 'max_flow' && renderMaxFlowBody('max-flow-view')}
             
             {currentTestView === 'flow_accuracy' && (
               <>
@@ -1933,6 +1936,14 @@ export function ControlPlane() {
                 className={`target-flow-input ${isFlowPending ? 'flow-pending' : ''}`}
                 data-element-id="set_target_flow"
               />
+            </div>
+            <div className="target-flow-duty-cycle">
+              Duty Cycle:{' '}
+              <span className="target-flow-duty-cycle-value">
+                {selectedPump?.maxFlowRate && selectedPump.maxFlowRate > 0
+                  ? `${((localSliderValue / selectedPump.maxFlowRate) * 100).toFixed(1)}%`
+                  : '—'}
+              </span>
             </div>
           </div>
         </div>

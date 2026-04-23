@@ -6,9 +6,10 @@ Provides functions for generating PNG charts and PDF reports from test data.
 
 import base64
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for headless operation
@@ -43,14 +44,24 @@ def _load_logo_base64(template_dir: Path) -> Optional[str]:
     return base64.b64encode(logo_path.read_bytes()).decode('utf-8')
 
 
-def _format_timestamp(value, fmt: str = '%Y-%m-%d %H:%M:%S') -> str:
-    """Jinja filter: render a Unix timestamp (seconds) as a human-readable string."""
+AEST = ZoneInfo("Australia/Sydney")
+
+
+def _format_timestamp(value, fmt: str = '%Y-%m-%d %I:%M:%S %p %Z') -> str:
+    """Jinja filter: render a Unix timestamp (seconds) as a human-readable
+    string in AEST (Australia/Sydney) with 12-hour AM/PM clock.
+
+    The container runs UTC by default, so naive `fromtimestamp` would show
+    UTC time. We explicitly convert to AEST so the report always matches the
+    operator's wall clock regardless of where the report is generated.
+    """
     if value is None or value == '':
         return ''
     try:
-        return datetime.fromtimestamp(float(value)).strftime(fmt)
+        ts = float(value)
     except (TypeError, ValueError):
         return str(value)
+    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(AEST).strftime(fmt)
 
 
 def render_test_chart_png(
@@ -185,7 +196,9 @@ def generate_report_pdf(
         'test_record': test_record,
         'chart_base64': chart_base64,
         'logo_base64': logo_base64,
-        'generation_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'generation_timestamp': datetime.now(tz=timezone.utc).astimezone(AEST).strftime(
+            '%Y-%m-%d %I:%M:%S %p %Z'
+        ),
         'pump_metadata': test_record.get('pump_metadata', {}),
         'metrics': test_record.get('metrics', {}),
         'notes': test_record.get('notes', ''),

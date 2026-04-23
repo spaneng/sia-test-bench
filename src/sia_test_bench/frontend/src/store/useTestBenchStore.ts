@@ -56,8 +56,14 @@ export interface MaxPressureVerifyStatus {
 export interface MaxFlowRegulateStatus {
   currentPressure: number | null;
   targetPressure: number | null;
+  pressureTolerance: number | null;
   currentFlow: number | null;
+  // Trailing MA the backend gate compares against; kept separate from
+  // currentFlow (raw) so the tile can render raw but colour by MA.
+  currentFlowMa: number | null;
   targetFlow: number | null;
+  currentLevelMm: number | null;
+  targetLevelMm: number | null;
   targetsMet: boolean;
   holdElapsed: number;
   holdDuration: number;
@@ -66,8 +72,12 @@ export interface MaxFlowRegulateStatus {
 export const DEFAULT_FLOW_REGULATE_STATUS: MaxFlowRegulateStatus = {
   currentPressure: null,
   targetPressure: null,
+  pressureTolerance: null,
   currentFlow: null,
+  currentFlowMa: null,
   targetFlow: null,
+  currentLevelMm: null,
+  targetLevelMm: 800,
   targetsMet: false,
   holdElapsed: 0,
   holdDuration: 3,
@@ -97,6 +107,7 @@ export interface MaxFlowResult {
   finalLevelM: number | null;
   sightGlassAreaM2: number | null;
   durationSeconds: number | null;
+  targetPressurePsi: number | null;
 }
 
 export const DEFAULT_FLOW_RESULT: MaxFlowResult = {
@@ -105,6 +116,7 @@ export const DEFAULT_FLOW_RESULT: MaxFlowResult = {
   finalLevelM: null,
   sightGlassAreaM2: null,
   durationSeconds: null,
+  targetPressurePsi: null,
 };
 
 export const DEFAULT_VERIFY_STATUS: MaxPressureVerifyStatus = {
@@ -347,6 +359,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
         finalLevelM: (payload?.final_level_m as number | null | undefined) ?? null,
         sightGlassAreaM2: (payload?.sight_glass_area_m2 as number | null | undefined) ?? null,
         durationSeconds: (payload?.duration_seconds as number | null | undefined) ?? null,
+        targetPressurePsi: (payload?.target_pressure_psi as number | null | undefined) ?? null,
       };
       set({ maxFlowComplete: true, maxFlowProgress: 100, maxFlowResult: result });
     } else if (test === 'flow_accuracy') {
@@ -502,6 +515,10 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
         timestamp: isMilliseconds ? data.timestamp / 1000 : data.timestamp,
         pressure: data.pressure,
         flowRate: data.flowRate,
+        // Raw unfiltered coriolis reading — the report chart prefers this
+        // over the Kalman-filtered flowRate so the 60s trace reflects the
+        // actual sensor signal, not the smoother downstream view.
+        flowRateUnfiltered: data.flowRateUnfiltered,
         // Include other fields if present
         tankLevel: data.tankLevel,
         // Raw analogue level reading in metres — used by the max-flow
@@ -538,6 +555,7 @@ export const useTestBenchStore = create<TestBenchState>((set, get) => ({
         max_flow_final_level_m: maxFlowResult.finalLevelM,
         max_flow_sight_glass_area_m2: maxFlowResult.sightGlassAreaM2,
         max_flow_duration_seconds: maxFlowResult.durationSeconds,
+        max_flow_target_pressure_psi: maxFlowResult.targetPressurePsi,
       };
       
       // POST to finalize endpoint

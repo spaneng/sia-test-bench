@@ -219,10 +219,19 @@ class TestBenchServer:
                     max_flow_rate = data.get('max_flow_rate')
                     from .application import MAX_FLOW_PRESSURE_TARGET_PCT, MAX_FLOW_RATE_TARGET_PCT
                     if target_pressure is not None:
+                        from .application import MAX_FLOW_PRESSURE_TOLERANCE_PCT
                         self.application.target_max_flow_pressure_psi = target_pressure * MAX_FLOW_PRESSURE_TARGET_PCT
+                        # Tolerance is 3% of the pump's marketed max pressure, not
+                        # 3% of the target — so the band stays usable even when
+                        # the target is a small fraction (10%) of max.
+                        self.application.target_max_flow_pressure_tolerance_psi = (
+                            target_pressure * MAX_FLOW_PRESSURE_TOLERANCE_PCT
+                        )
                         log.info(
                             f"Flow pressure gate: {self.application.target_max_flow_pressure_psi:.2f} PSI "
-                            f"({MAX_FLOW_PRESSURE_TARGET_PCT*100:.0f}% of {target_pressure})"
+                            f"({MAX_FLOW_PRESSURE_TARGET_PCT*100:.0f}% of {target_pressure}) "
+                            f"± {self.application.target_max_flow_pressure_tolerance_psi:.2f} PSI "
+                            f"({MAX_FLOW_PRESSURE_TOLERANCE_PCT*100:.0f}% of max)"
                         )
                     if max_flow_rate is not None:
                         self.application.flow_accuracy_max_flow_rate = float(max_flow_rate)
@@ -748,20 +757,22 @@ class TestBenchServer:
         try:
             # Load PDF from disk
             pdf_bytes = self.test_persistence.load_report_pdf(test_id)
-            
+
             if pdf_bytes is None:
                 log.warning(f"Report PDF not found for test {test_id}")
                 return web.json_response(
-                    {'error': 'Report not found'}, 
+                    {'error': 'Report not found'},
                     status=404
                 )
-            
+
+            filename = self._build_report_filename(test_id)
+
             # Stream PDF response
             return web.Response(
                 body=pdf_bytes,
                 content_type='application/pdf',
                 headers={
-                    'Content-Disposition': f'inline; filename="test_report_{test_id}.pdf"'
+                    'Content-Disposition': f'inline; filename="{filename}"'
                 }
             )
             
@@ -771,6 +782,64 @@ class TestBenchServer:
                 {'error': 'Internal server error'}, 
                 status=500
             )
+
+    def _build_report_filename(self, test_id: str) -> str:
+        """Build a report filename of the form `{serial}_{test_type}_{date_AEST}.pdf`.
+
+        Pulls the pump serial and test start date from the persisted test
+        record so the downloaded file is immediately identifiable without
+        opening it. The date is rendered in AEST (UTC+10, no DST — matching
+        Australia/Brisbane) so filenames are consistent year-round regardless
+        of where the server is hosted. Falls back to the raw test_id if any
+        field is missing.
+        """
+        import re
+        from datetime import timezone, timedelta
+
+        AEST = timezone(timedelta(hours=10), name='AEST')
+
+        record = self.test_persistence.load_test_record(test_id) or {}
+        metadata = record.get('metadata') or {}
+        serial = (
+            metadata.get('pump_serial')
+            or metadata.get('serial_number')
+            or metadata.get('serial')
+            or 'unknown-serial'
+        )
+
+        test_type = record.get('test_type')
+        if not test_type and test_id and '-' in test_id:
+            test_type = test_id.rsplit('-', 1)[0].replace('-', '_')
+        test_type = test_type or 'test'
+
+        date_str = None
+        metrics = record.get('metrics') or {}
+        start_ts = metrics.get('start_timestamp') or metadata.get('start_timestamp')
+        if start_ts:
+            try:
+                date_str = (
+                    datetime.fromtimestamp(float(start_ts), tz=AEST)
+                    .strftime('%Y-%m-%d')
+                )
+            except (TypeError, ValueError):
+                date_str = None
+        if not date_str:
+            # generated_at is stored as UTC ISO ("…Z"); reinterpret in AEST.
+            generated_at = record.get('generated_at', '')
+            try:
+                iso = generated_at.rstrip('Z')
+                date_str = (
+                    datetime.fromisoformat(iso)
+                    .replace(tzinfo=timezone.utc)
+                    .astimezone(AEST)
+                    .strftime('%Y-%m-%d')
+                )
+            except (TypeError, ValueError):
+                date_str = datetime.now(AEST).strftime('%Y-%m-%d')
+
+        raw = f"{serial}_{test_type}_{date_str}.pdf"
+        # Strip anything that isn't filesystem-safe on common OSes.
+        return re.sub(r'[^A-Za-z0-9._-]+', '_', raw)
 
     async def start_pump(self):
         """Start the pump."""

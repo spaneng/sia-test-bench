@@ -270,8 +270,13 @@ export function ControlPlane() {
 
     // Max-flow capture begins when the 60s run starts (max_flow_run entry).
     // Flow-accuracy continues to capture from stabilise entry as before.
-    const isFlowStabiliseState = stateMachineState === 'max_flow_run' ||
-                                 stateMachineState === 'flow_accuracy_stabilise';
+    // Both are guarded by testStartTimestamp === null so the effect only
+    // fires once per run — without the guard, each data tick would bump the
+    // start forward and the final capture window would be a few samples wide.
+    const isFlowStabiliseState = (
+      stateMachineState === 'max_flow_run' ||
+      stateMachineState === 'flow_accuracy_stabilise'
+    ) && testStartTimestamp === null;
 
     if (isMaxPressureStage3Start || isFlowStabiliseState) {
       if (dataHistory.length > 0 && dataHistory[dataHistory.length - 1]?.timestamp) {
@@ -288,9 +293,12 @@ export function ControlPlane() {
     const isMaxPressureStage3End =
       stateMachineState === 'max_pressure_end' && testEndTimestamp === null;
 
-    // Flow tests capture end at their dedicated end state.
-    const isFlowEndState = stateMachineState === 'max_flow_end' ||
-                           stateMachineState === 'flow_accuracy_end';
+    // Flow tests capture end at their dedicated end state. Same one-shot
+    // guard as max-pressure.
+    const isFlowEndState = (
+      stateMachineState === 'max_flow_end' ||
+      stateMachineState === 'flow_accuracy_end'
+    ) && testEndTimestamp === null;
 
     if ((isMaxPressureStage3End || isFlowEndState)
         && dataHistory.length > 0
@@ -692,7 +700,7 @@ export function ControlPlane() {
       setMaxFlowConfirmed(true);
       setMaxFlowVerifying(true);
       setIsTestRunning(true);
-      // Backend derives the pressure (30% of max) and flow (97% of max) gates
+      // Backend derives the pressure (10% of max) and flow (80% of max) gates
       // from these two fields, so both are required.
       sendMessage({
         type: 'test',
@@ -886,7 +894,7 @@ export function ControlPlane() {
   const renderMaxFlowBody = (viewKey: string) => {
     const fmt = (v: number | null | undefined, digits = 1) =>
       (v === null || v === undefined || Number.isNaN(v)) ? '—' : v.toFixed(digits);
-    const targetPressure = selectedPump?.maxPressure ? selectedPump.maxPressure * 0.30 : null;
+    const targetPressure = selectedPump?.maxPressure ? selectedPump.maxPressure * 0.10 : null;
     const targetFlow = selectedPump?.maxFlowRate ? selectedPump.maxFlowRate * 0.97 : null;
 
     let body;
@@ -920,7 +928,7 @@ export function ControlPlane() {
             The pump will run at 100% duty cycle.
             <br />
             You'll adjust the pressure regulator to reach {fmt(targetPressure, 1)} PSI
-            (30% of max) while the flow meter reads at least {fmt(targetFlow, 1)} L/Hr
+            (10% of max) while the flow meter reads at least {fmt(targetFlow, 1)} L/Hr
             (97% of max).
           </p>
           <button
@@ -934,10 +942,17 @@ export function ControlPlane() {
       );
     } else if (stateMachineState === 'max_flow_regulate') {
       const status = maxFlowRegulateStatus;
-      const pressureOk = status.currentPressure !== null && status.targetPressure !== null
-        && status.currentPressure >= status.targetPressure;
-      const flowOk = status.currentFlow !== null && status.targetFlow !== null
-        && status.currentFlow >= status.targetFlow;
+      const pressureOk = status.currentPressure !== null
+        && status.targetPressure !== null
+        && status.pressureTolerance !== null
+        && Math.abs(status.currentPressure - status.targetPressure) <= status.pressureTolerance;
+      // Flow tile colours by the MA (what the gate judges), even though the
+      // number rendered is the raw reading — so the operator can see the tile
+      // glow green while the raw number bounces above/below the threshold.
+      const flowOk = status.currentFlowMa !== null && status.targetFlow !== null
+        && status.currentFlowMa >= status.targetFlow;
+      const levelOk = status.currentLevelMm !== null && status.targetLevelMm !== null
+        && status.currentLevelMm >= status.targetLevelMm;
       return (
         <>
           <div className="test-view" key={viewKey}>
@@ -947,18 +962,25 @@ export function ControlPlane() {
                 <div className={`regulate-stat ${pressureOk ? 'ok' : ''}`}>
                   <div className="regulate-stat-label">Pressure</div>
                   <div className="regulate-stat-current">{fmt(status.currentPressure, 1)} PSI</div>
-                  <div className="regulate-stat-target">target ≥ {fmt(status.targetPressure, 1)} PSI</div>
+                  <div className="regulate-stat-target">
+                    target {fmt(status.targetPressure, 1)} ± {fmt(status.pressureTolerance, 1)} PSI
+                  </div>
                 </div>
                 <div className={`regulate-stat ${flowOk ? 'ok' : ''}`}>
                   <div className="regulate-stat-label">Flow</div>
                   <div className="regulate-stat-current">{fmt(status.currentFlow, 1)} L/Hr</div>
                   <div className="regulate-stat-target">target ≥ {fmt(status.targetFlow, 1)} L/Hr</div>
                 </div>
+                <div className={`regulate-stat ${levelOk ? 'ok' : ''}`}>
+                  <div className="regulate-stat-label">Tank Level</div>
+                  <div className="regulate-stat-current">{fmt(status.currentLevelMm, 0)} mm</div>
+                  <div className="regulate-stat-target">target ≥ {fmt(status.targetLevelMm, 0)} mm</div>
+                </div>
               </div>
               <p className="regulate-hint">
                 {status.targetsMet
                   ? `Holding… ${status.holdElapsed.toFixed(1)} / ${status.holdDuration.toFixed(1)} s`
-                  : 'Both targets must hold together for 3 s'}
+                  : 'All three targets must hold together for 3 s'}
               </p>
             </div>
           </div>

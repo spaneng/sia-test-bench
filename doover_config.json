@@ -42,6 +42,16 @@
                     "description": "The pump 1 application",
                     "x-position": 1
                 },
+                "injection_controller_app": {
+                    "title": "Injection Controller App",
+                    "x-name": "injection_controller_app",
+                    "x-hidden": false,
+                    "format": "doover-resource-application",
+                    "type": "string",
+                    "x-required": true,
+                    "description": "The SIA injection controller whose calibration_gauge_area is used as the sight glass area for the max-flow test.",
+                    "x-position": 2
+                },
                 "tank_level_app": {
                     "title": "Tank Level App",
                     "x-name": "tank_level_app",
@@ -50,7 +60,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The tank level application",
-                    "x-position": 2
+                    "x-position": 3
                 },
                 "pressure_app": {
                     "title": "Pressure App",
@@ -60,7 +70,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The pressure sensor application",
-                    "x-position": 3
+                    "x-position": 4
                 },
                 "flow_meter_sensor_app": {
                     "title": "Flow Meter Sensor App",
@@ -70,7 +80,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The flow sensor application",
-                    "x-position": 4
+                    "x-position": 5
                 },
                 "current_draw_24vdc_app": {
                     "title": "Current Draw 24VDC App",
@@ -80,7 +90,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The current transducer application for 24VDC pumps",
-                    "x-position": 5
+                    "x-position": 6
                 },
                 "current_draw_12vdc_app": {
                     "title": "Current Draw 12VDC App",
@@ -90,7 +100,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The current transducer application for 12VDC pumps",
-                    "x-position": 6
+                    "x-position": 7
                 },
                 "current_draw_240vac_app": {
                     "title": "Current Draw 240VAC App",
@@ -100,7 +110,7 @@
                     "type": "string",
                     "x-required": true,
                     "description": "The current transducer application for 240VAC pumps",
-                    "x-position": 7
+                    "x-position": 8
                 },
                 "pulse_detection_source": {
                     "enum": [
@@ -118,12 +128,13 @@
                     "x-required": false,
                     "description": "Which sensor(s) to use for pulse rate detection.",
                     "default": "flow",
-                    "x-position": 8
+                    "x-position": 9
                 }
             },
             "additionalElements": true,
             "required": [
                 "pump_controller_app",
+                "injection_controller_app",
                 "tank_level_app",
                 "pressure_app",
                 "flow_meter_sensor_app",

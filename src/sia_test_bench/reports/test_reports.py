@@ -89,7 +89,9 @@ def render_test_chart_png(series: List[Dict[str, Any]], test_name: str = None) -
         pressure_smoothed = _moving_average(pressure_psi, window=9)
         return _render_chart(
             time_series, left_smoothed, pressure_smoothed, test_name=test_name,
-            left_label='Current', left_unit='A', left_color='#6b7280',
+            left_label='Current', left_unit='A',
+            # SIA orange at 50% alpha (trailing `80` hex = 128/255).
+            left_color='#FF800080',
         )
 
     # Max-flow test: coriolis flow rate on the primary axis and sight-glass
@@ -99,13 +101,23 @@ def render_test_chart_png(series: List[Dict[str, Any]], test_name: str = None) -
         test_name and "flow" in test_name.lower() and "accuracy" not in test_name.lower()
     )
     if is_max_flow:
-        flow_lph = [point.get("flowRate") or 0.0 for point in series]
+        # Prefer the raw unfiltered coriolis signal on the report chart so the
+        # 60s trace reflects what the sensor actually reported — falling back
+        # to flowRate (Kalman) if the raw field is missing (e.g. older series).
+        flow_lph = [
+            (point.get("flowRateUnfiltered") if point.get("flowRateUnfiltered") is not None
+             else point.get("flowRate")) or 0.0
+            for point in series
+        ]
         level_mm = [
             (point.get("levelReading") or 0.0) * 1000.0 for point in series
         ]
         return _render_chart(
             time_series, flow_lph, level_mm, test_name=test_name,
-            left_label='Flow Rate', left_unit='L/Hr', left_color='#FF8000',
+            # SIA orange at 50% alpha (trailing `80` hex = 128/255) — the raw
+            # coriolis signal is noisy, so we mute it to let the level trace
+            # dominate visually.
+            left_label='Flow Rate', left_unit='L/Hr', left_color='#FF800080',
             right_label='Sight Glass Level', right_unit='mm', right_color='#2563eb',
         )
 
@@ -174,8 +186,17 @@ def generate_report_pdf(test_record: Dict[str, Any], chart_png_bytes: bytes) -> 
         "max_flow_final_level_m",
         "max_flow_sight_glass_area_m2",
         "max_flow_duration_seconds",
+        "max_flow_target_pressure_psi",
     ):
         metrics[field] = _coerce_float(normalized_metadata.pop(field, None))
+
+    # Max-flow test duration is authoritatively 60s from the backend; the
+    # series-derived duration_seconds is unreliable for this test (the capture
+    # window only holds samples that arrive during the run, and can drop to
+    # near-zero if the run is cut short). Use the backend value as the source
+    # of truth so the "Test Duration" row reads correctly.
+    if metrics.get("max_flow_duration_seconds") is not None:
+        metrics["duration_seconds"] = metrics["max_flow_duration_seconds"]
 
     adapted_record = {
         "pump_metadata": normalized_metadata,

@@ -393,13 +393,6 @@
                     <td>%</td>
                 </tr>
                 {% endif %}
-                {% if test.metrics.rpm_at_max_pressure is not none %}
-                <tr>
-                    <td class="metric-label">Pump RPM at Max Pressure</td>
-                    <td class="metric-value">{{ "%.1f"|format(test.metrics.rpm_at_max_pressure) }}</td>
-                    <td>RPM</td>
-                </tr>
-                {% endif %}
                 {% endif %}
             </table>
         </div>

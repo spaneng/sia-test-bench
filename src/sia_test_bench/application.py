@@ -1,3 +1,4 @@
+import collections
 import json
 import logging
 import time
@@ -30,12 +31,19 @@ MAX_PRESSURE_STAGE2_WARNING_TIME = 30.0
 # Stage 3 hold duration — how long pressure must be held at target before verify passes
 # (also defines the window of data captured for the report chart).
 MAX_PRESSURE_STAGE3_DURATION = 60.0
-# Max-flow test: operator dials the regulator until pressure is ~30% of max
-# AND the coriolis filtered flow reaches ≥97% of the pump's rated max flow.
-# Both conditions must be held continuously for MAX_FLOW_REGULATE_HOLD_SECONDS
-# to guard against momentary crossings.
-MAX_FLOW_PRESSURE_TARGET_PCT = 0.30
-MAX_FLOW_RATE_TARGET_PCT = 0.97
+# Max-flow test: operator dials the regulator until pressure is ~10% of max
+# AND the coriolis filtered flow reaches the flow-rate gate. Both conditions
+# must be held continuously for MAX_FLOW_REGULATE_HOLD_SECONDS to guard
+# against momentary crossings.
+MAX_FLOW_PRESSURE_TARGET_PCT = 0.10
+# Pressure must be within ± this fraction of the *marketed max pressure*
+# of the target set-point. Scaled against max (not target) so the acceptable
+# band doesn't shrink when the target itself is a small fraction of max.
+MAX_FLOW_PRESSURE_TOLERANCE_PCT = 0.03
+MAX_FLOW_RATE_TARGET_PCT = 0.80
+# Tank level must be at least this high before the 60s run starts, so the
+# test isn't run against a near-empty sight glass.
+MAX_FLOW_TANK_LEVEL_MIN_MM = 800.0
 MAX_FLOW_REGULATE_HOLD_SECONDS = 3.0
 # After pump-start in the run phase, wait this long before checking that the
 # sight-glass level is actually dropping. Too short and pump startup masks it.
@@ -126,11 +134,20 @@ class SiaTestBenchApplication(Application):
         self.current_pressure = None
         self.target_max_pressure = None
         self.current_flow = None
-        # target_max_flow_pressure_psi = pressure at 30% of max (operator gate)
-        # target_max_flow_rate_lhr = coriolis flow threshold (97% of max)
+        # target_max_flow_pressure_psi = pressure at 10% of max (operator gate)
+        # target_max_flow_pressure_tolerance_psi = ±3% of max pressure
+        # target_max_flow_rate_lhr = coriolis flow threshold (80% of max)
         self.target_max_flow_pressure_psi = None
+        self.target_max_flow_pressure_tolerance_psi = None
         self.target_max_flow_rate_lhr = None
         self.current_level_reading = None
+        # Raw (unfiltered) coriolis flow — shown live on the regulate tile.
+        self.current_flow_unfiltered = None
+        # Trailing 50-sample MA of the unfiltered flow — used by the regulate
+        # *gate* so the threshold doesn't flap with noise. Display intentionally
+        # keeps the raw value so the operator sees instantaneous behaviour.
+        self._flow_ma_buffer: collections.deque = collections.deque(maxlen=50)
+        self.current_flow_ma = None
         self.target_flow_accuracy = None
         self.flow_accuracy_max_flow_rate = None
 
@@ -406,7 +423,15 @@ class SiaTestBenchApplication(Application):
             # Store current pressure, flow, and level reading for verification checks
             self.current_pressure = pressure
             self.current_flow = flow_rate
+            self.current_flow_unfiltered = flow_rate_unfiltered
             self.current_level_reading = level_reading
+            # Keep the MA buffer fed from the raw unfiltered signal.
+            if flow_rate_unfiltered is not None:
+                self._flow_ma_buffer.append(flow_rate_unfiltered)
+            self.current_flow_ma = (
+                sum(self._flow_ma_buffer) / len(self._flow_ma_buffer)
+                if self._flow_ma_buffer else None
+            )
         except Exception as e:
             log.error(f"Error getting tag values: {e}")
             # Use None values if tags are not available
@@ -678,14 +703,19 @@ class SiaTestBenchApplication(Application):
         return self.shared_flow_confirmation
 
     def _max_flow_regulate_targets_met(self) -> bool:
-        """Both the 30%-pressure gate and the 97%-flow gate are currently met."""
+        """All three regulate gates: pressure within tolerance, MA flow ≥
+        threshold, tank level ≥ 800 mm. The gate uses the MA (not the raw
+        value shown on the tile) so it doesn't flicker on noise."""
         if (self.current_pressure is None or self.target_max_flow_pressure_psi is None
-                or self.current_flow is None or self.target_max_flow_rate_lhr is None):
+                or self.target_max_flow_pressure_tolerance_psi is None
+                or self.current_flow_ma is None or self.target_max_flow_rate_lhr is None
+                or self.current_level_reading is None):
             return False
-        return (
-            self.current_pressure >= self.target_max_flow_pressure_psi
-            and self.current_flow >= self.target_max_flow_rate_lhr
-        )
+        tolerance = self.target_max_flow_pressure_tolerance_psi
+        pressure_ok = abs(self.current_pressure - self.target_max_flow_pressure_psi) <= tolerance
+        flow_ok = self.current_flow_ma >= self.target_max_flow_rate_lhr
+        level_ok = (self.current_level_reading * 1000.0) >= MAX_FLOW_TANK_LEVEL_MIN_MM
+        return pressure_ok and flow_ok and level_ok
 
     def check_max_flow_regulate_complete(self):
         """Operator has held both gates continuously for the hold duration."""
@@ -701,17 +731,34 @@ class SiaTestBenchApplication(Application):
         return False
 
     def get_max_flow_regulate_status(self):
-        """Diagnostics for the regulate UI (live pressure/flow vs targets)."""
+        """Diagnostics for the regulate UI.
+
+        `current_flow` is the raw unfiltered coriolis reading — what you see
+        on the greyed secondary line of the Flow Rate mini chart. The gate
+        compares against the MA internally (exposed as `current_flow_ma` too
+        for the UI's tile-OK indicator), so display and gate don't always
+        agree instantaneously — the operator watches the noise; the gate
+        judges the moving average.
+        """
         now = time.time()
         hold_elapsed = (
             now - self.max_flow_regulate_settled_start
             if self.max_flow_regulate_settled_start is not None else 0.0
         )
+        pressure_tolerance = self.target_max_flow_pressure_tolerance_psi
+        current_level_mm = (
+            self.current_level_reading * 1000.0
+            if self.current_level_reading is not None else None
+        )
         return {
             'current_pressure': self.current_pressure,
             'target_pressure': self.target_max_flow_pressure_psi,
-            'current_flow': self.current_flow,
+            'pressure_tolerance': pressure_tolerance,
+            'current_flow': self.current_flow_unfiltered,
+            'current_flow_ma': self.current_flow_ma,
             'target_flow': self.target_max_flow_rate_lhr,
+            'current_level_mm': current_level_mm,
+            'target_level_mm': MAX_FLOW_TANK_LEVEL_MIN_MM,
             'targets_met': self._max_flow_regulate_targets_met(),
             'hold_elapsed': hold_elapsed,
             'hold_duration': MAX_FLOW_REGULATE_HOLD_SECONDS,
@@ -900,6 +947,7 @@ class SiaTestBenchApplication(Application):
         # Reset target pressure and flow
         self.target_max_pressure = None
         self.target_max_flow_pressure_psi = None
+        self.target_max_flow_pressure_tolerance_psi = None
         self.target_max_flow_rate_lhr = None
         self.target_flow_accuracy = None
         self.flow_accuracy_max_flow_rate = None
@@ -928,6 +976,7 @@ class SiaTestBenchApplication(Application):
                     'final_level_m': self.max_flow_final_level,
                     'sight_glass_area_m2': self.sight_glass_area_m2,
                     'duration_seconds': MAX_FLOW_RUN_DURATION,
+                    'target_pressure_psi': self.target_max_flow_pressure_psi,
                 })
                 log.info("Max flow test completed - notifying frontend")
                 # Reset the acknowledgment flag for next test
